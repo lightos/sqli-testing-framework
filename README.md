@@ -1,17 +1,33 @@
 # SQL Injection Testing Framework
 
-A comprehensive framework for validating and discovering SQL injection techniques across multiple database platforms.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Vitest](https://img.shields.io/badge/Vitest-Testing-6E9F18.svg)](https://vitest.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12%20%7C%2016-336791.svg)](https://www.postgresql.org/)
+
+A comprehensive framework for validating and testing SQL injection techniques against real database instances in isolated Docker environments.
 
 ## Overview
 
-This framework provides:
+This framework validates SQL injection payloads documented in the [SQL Injection Knowledge Base](https://github.com/WebsecLabs/sql-injection-knowledge-base). The test suites cover techniques and payloads from the knowledge base, ensuring they work as documented against real database instances.
+
+### Features
 
 - **Direct SQL Testing** - Execute SQL directly against databases to validate syntax and behavior
 - **HTTP Testing** - Test injection payloads via a vulnerable web application
 - **Multi-Version Support** - Test against multiple database versions simultaneously
 - **Timing Analysis** - Automated timing-based blind injection testing
+- **615+ Tests** - Comprehensive test coverage across 26 test files
 
-Currently supports PostgreSQL, with MySQL, MSSQL, and Oracle planned.
+### Current Database Support
+
+| Database   | Status    | Versions |
+| ---------- | --------- | -------- |
+| PostgreSQL | Supported | 12, 16   |
+| MySQL      | Planned   | -        |
+| MSSQL      | Planned   | -        |
+| Oracle     | Planned   | -        |
 
 ## Prerequisites
 
@@ -19,11 +35,11 @@ Currently supports PostgreSQL, with MySQL, MSSQL, and Oracle planned.
 - Docker and Docker Compose
 - npm or pnpm
 
-## Installation
+## Quick Start
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/lightos/sqli-testing-framework.git
 cd sqli-testing-framework
 
 # Install dependencies
@@ -31,11 +47,7 @@ npm install
 
 # Copy environment template
 cp .env.example .env
-```
 
-## Quick Start
-
-```bash
 # Start PostgreSQL containers
 npm run docker:up
 
@@ -70,10 +82,8 @@ sqli-testing-framework/
 │       ├── logger.ts           # Structured logging
 │       └── timing.ts           # Timing utilities
 ├── tests/
-│   └── postgresql/
-│       ├── timing.test.ts              # Time-based injection
-│       ├── stacked-queries.test.ts     # Multi-statement injection
-│       └── testing-injection.test.ts   # Detection techniques
+│   └── postgresql/             # 26 test files, 615+ tests
+├── COVERAGE.md                 # KB coverage documentation
 └── package.json
 ```
 
@@ -100,8 +110,6 @@ The Docker setup includes multiple PostgreSQL versions for compatibility testing
 | sqli-pg12 | 5432 | PostgreSQL 12 |
 | sqli-pg16 | 5433 | PostgreSQL 16 |
 
-Set `PG_PORT` environment variable to switch between versions:
-
 ```bash
 # Test against PostgreSQL 12
 PG_PORT=5432 npm test
@@ -112,40 +120,26 @@ PG_PORT=5433 npm test
 
 ## Test Categories
 
-### Timing Tests (`timing.test.ts`)
+Tests are organized to match the [SQL Injection Knowledge Base](https://github.com/WebsecLabs/sql-injection-knowledge-base) structure:
 
-Validates time-based blind SQL injection techniques:
-
-- `pg_sleep()` basic functionality
-- Conditional timing with `CASE WHEN`
-- Data extraction via timing differences
-- Heavy query timing (without `pg_sleep`)
-
-### Stacked Queries (`stacked-queries.test.ts`)
-
-Tests multi-statement SQL injection:
-
-- Basic stacked query execution
-- Schema manipulation (CREATE, ALTER, DROP)
-- Privilege escalation patterns
-- Information gathering
-
-### Detection Tests (`testing-injection.test.ts`)
-
-Validates injection detection techniques:
-
-- Boolean-based detection
-- Error-based detection
-- UNION-based detection
-- Comment techniques
-- PostgreSQL-specific features
+| Category              | Test File                      | Tests |
+| --------------------- | ------------------------------ | ----- |
+| Timing Attacks        | `timing.test.ts`               | 9     |
+| Stacked Queries       | `stacked-queries.test.ts`      | 12    |
+| Detection Techniques  | `testing-injection.test.ts`    | 38    |
+| String Concatenation  | `string-concatenation.test.ts` | 40    |
+| Fuzzing & Obfuscation | `fuzzing-obfuscation.test.ts`  | 38    |
+| Privilege Escalation  | `privilege-escalation.test.ts` | 36    |
+| Config Exploitation   | `config-exploitation.test.ts`  | 34    |
+| File Operations       | `reading-files.test.ts`        | 18    |
+| Command Execution     | `command-execution.test.ts`    | 21    |
+| ...and more           | See `COVERAGE.md`              | 615+  |
 
 ## Vulnerable Application
 
 The framework includes a minimal Express app with intentional vulnerabilities:
 
 ```bash
-# Start the vulnerable app
 npm run app:start
 ```
 
@@ -188,13 +182,16 @@ Environment variables (see `.env.example`):
 
 ## Writing Tests
 
-Tests use [Vitest](https://vitest.dev/) and the framework's test runners:
+Tests use [Vitest](https://vitest.dev/) and link to KB entries via JSDoc annotations:
 
 ```typescript
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { initDirectRunner, cleanupDirectRunner, directSQL } from "../../src/runner/direct.js";
 
-describe("My SQL Injection Tests", () => {
+/**
+ * @kb-coverage postgresql/timing - Full coverage
+ */
+describe("PostgreSQL Timing Attacks", () => {
   beforeAll(async () => {
     await initDirectRunner();
   });
@@ -203,16 +200,20 @@ describe("My SQL Injection Tests", () => {
     await cleanupDirectRunner();
   });
 
-  test("injection payload works", async () => {
-    const { success, result, timing } = await directSQL("SELECT * FROM users WHERE id = 1 OR 1=1");
+  /**
+   * @kb-entry postgresql/timing
+   * @kb-section pg_sleep() Timing Attack
+   */
+  test("pg_sleep() delays execution", async () => {
+    const { success, result, timing } = await directSQL("SELECT pg_sleep(0.1)");
 
     expect(success).toBe(true);
-    expect(result?.rows.length).toBeGreaterThan(1);
+    expect(timing).toBeGreaterThan(100);
   });
 });
 ```
 
-## Future Roadmap
+## Roadmap
 
 - [ ] MySQL adapter and tests
 - [ ] MSSQL adapter and tests
@@ -221,16 +222,34 @@ describe("My SQL Injection Tests", () => {
 - [ ] HTML report generation
 - [ ] CI/CD integration
 
-## Security Notice
+## Disclaimer
 
-This framework contains **intentionally vulnerable code** for educational and testing purposes.
+> **WARNING: This framework is for authorized security testing and educational purposes only.**
 
-**DO NOT:**
+This repository contains:
 
-- Deploy the vulnerable app to production
-- Expose the vulnerable app to untrusted networks
+- Intentionally vulnerable code
+- SQL injection payloads and techniques
+- Tools that can be used to compromise database systems
+
+**You MUST:**
+
+- Only use this framework against systems you own or have explicit written authorization to test
+- Ensure all testing is performed in isolated environments
+- Comply with all applicable laws and regulations
+
+**You MUST NOT:**
+
+- Deploy the vulnerable application to production or public networks
 - Use these techniques against systems without authorization
+- Use this framework for malicious purposes
+
+The authors are not responsible for any misuse or damage caused by this framework. By using this software, you agree to use it responsibly and ethically.
+
+## Related Projects
+
+- [SQL Injection Knowledge Base](https://github.com/WebsecLabs/sql-injection-knowledge-base) - Comprehensive documentation of SQL injection techniques that this framework validates
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

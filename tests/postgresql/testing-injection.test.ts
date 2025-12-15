@@ -3,6 +3,13 @@
  *
  * These tests validate basic SQL injection detection techniques
  * documented in the SQL Injection Knowledge Base.
+ *
+ * @kb-coverage postgresql/testing-injection - Full coverage
+ * @kb-coverage postgresql/testing-version - Partial (version() function)
+ * @kb-coverage postgresql/comment-out-query - Full coverage
+ * @kb-coverage postgresql/string-concatenation - Partial (||, CHR, ASCII, SUBSTRING)
+ * @kb-coverage postgresql/avoiding-quotations - Partial (CHR encoding)
+ * @kb-coverage postgresql/database-names - Partial (current_database)
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
@@ -25,6 +32,10 @@ describe("PostgreSQL Injection Detection", () => {
     await cleanupDirectRunner();
   }, 10000);
 
+  /**
+   * @kb-entry postgresql/testing-injection
+   * @kb-section Boolean-Based SQLi
+   */
   describe("Boolean-based detection", () => {
     test("OR 1=1 always returns true", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = 999 OR 1=1");
@@ -68,6 +79,10 @@ describe("PostgreSQL Injection Detection", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/testing-injection
+   * @kb-section Error-Based SQLi
+   */
   describe("Error-based detection", () => {
     test("CAST error reveals injection point", async () => {
       const error = await directSQLExpectError("SELECT CAST('test' AS int)");
@@ -94,6 +109,10 @@ describe("PostgreSQL Injection Detection", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/testing-injection
+   * @kb-section UNION-Based SQLi
+   */
   describe("UNION-based detection", () => {
     test("UNION SELECT with matching columns", async () => {
       // Users table has id, username, password, email, role, created_at
@@ -147,6 +166,10 @@ describe("PostgreSQL Injection Detection", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/comment-out-query
+   * @kb-section Comment Syntax
+   */
   describe("Comment-based techniques", () => {
     test("Double dash comment (--) terminates query", async () => {
       const { success, result } = await directSQL(
@@ -175,6 +198,12 @@ describe("PostgreSQL Injection Detection", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/testing-version
+   * @kb-section Version Detection
+   * @kb-entry postgresql/database-names
+   * @kb-section Database Enumeration
+   */
   describe("PostgreSQL-specific detection", () => {
     test("version() function available", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT version()");
@@ -206,6 +235,12 @@ describe("PostgreSQL Injection Detection", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/string-concatenation
+   * @kb-section String Functions
+   * @kb-entry postgresql/avoiding-quotations
+   * @kb-section CHR() Encoding
+   */
   describe("String manipulation for bypass", () => {
     test("Concatenation with || operator", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT 'ad' || 'min' as combined");
@@ -234,6 +269,108 @@ describe("PostgreSQL Injection Detection", () => {
       );
 
       expect((rows[0] as { first_char: string }).first_char).toBe("a");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/testing-injection
+   * @kb-section PostgreSQL Cast Syntax
+   */
+  describe("PostgreSQL-specific cast syntax (::type)", () => {
+    test("::int cast shorthand works", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 1::int as num");
+      expect((rows[0] as { num: number }).num).toBe(1);
+    });
+
+    test("::text cast shorthand works", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 123::text as str");
+      expect((rows[0] as { str: string }).str).toBe("123");
+    });
+
+    test("::boolean cast shorthand works", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 1::boolean as bool");
+      expect((rows[0] as { bool: boolean }).bool).toBe(true);
+    });
+
+    test("1::int=1 as PostgreSQL detection", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT CASE WHEN 1::int=1 THEN 'postgresql' ELSE 'other' END as db"
+      );
+      expect((rows[0] as { db: string }).db).toBe("postgresql");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/testing-injection
+   * @kb-section Error-Based Data Extraction
+   */
+  describe("Error-based data extraction via CAST", () => {
+    test("CAST version() to int reveals version in error", async () => {
+      const error = await directSQLExpectError("SELECT CAST(version() AS int)");
+      expect(error.message).toMatch(/PostgreSQL/i);
+    });
+
+    test("::int cast reveals data in error", async () => {
+      const error = await directSQLExpectError("SELECT (SELECT current_database())::int");
+      expect(error.message).toMatch(/vulndb/i);
+    });
+
+    test("CAST current_user to int reveals username", async () => {
+      const error = await directSQLExpectError("SELECT CAST(current_user AS int)");
+      expect(error.message).toMatch(/postgres/i);
+    });
+
+    test("String markers in CAST error for easy extraction", async () => {
+      const error = await directSQLExpectError(
+        "SELECT CAST('~'||(SELECT current_database())||'~' AS int)"
+      );
+      expect(error.message).toMatch(/~vulndb~/i);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/string-concatenation
+   * @kb-section String Length and Position Functions
+   */
+  describe("String length and extraction functions", () => {
+    test("LENGTH() returns string length", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT LENGTH('admin') as len");
+      expect((rows[0] as { len: number }).len).toBe(5);
+    });
+
+    test("CHAR_LENGTH() is alias for LENGTH()", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT CHAR_LENGTH('admin') as len");
+      expect((rows[0] as { len: number }).len).toBe(5);
+    });
+
+    test("OCTET_LENGTH() returns byte length", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT OCTET_LENGTH('admin') as len");
+      expect((rows[0] as { len: number }).len).toBe(5);
+    });
+
+    test("SUBSTR() extracts substring", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT SUBSTR('admin', 1, 3) as sub");
+      expect((rows[0] as { sub: string }).sub).toBe("adm");
+    });
+
+    test("LEFT() returns leftmost characters", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT LEFT('admin', 3) as left");
+      expect((rows[0] as { left: string }).left).toBe("adm");
+    });
+
+    test("RIGHT() returns rightmost characters", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT RIGHT('admin', 3) as right");
+      expect((rows[0] as { right: string }).right).toBe("min");
+    });
+
+    test("POSITION() finds substring location", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT POSITION('min' IN 'admin') as pos");
+      expect((rows[0] as { pos: number }).pos).toBe(3);
+    });
+
+    test("STRPOS() PostgreSQL-specific position function", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT STRPOS('admin', 'min') as pos");
+      expect((rows[0] as { pos: number }).pos).toBe(3);
     });
   });
 });

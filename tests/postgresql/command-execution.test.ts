@@ -7,6 +7,7 @@
  * @kb-coverage postgresql/command-execution - Full coverage
  */
 
+import os from "node:os";
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import {
   initDirectRunner,
@@ -15,6 +16,28 @@ import {
   directSQLExpectSuccess,
 } from "../../src/runner/direct.js";
 import { logger } from "../../src/utils/logger.js";
+
+/**
+ * Get the libc path for the current platform/architecture.
+ * Returns null if no known path is available.
+ */
+function getLibcPath(): string | null {
+  const platform = os.platform();
+  const arch = os.arch();
+
+  if (platform !== "linux") {
+    return null; // libc.so paths only apply to Linux
+  }
+
+  // Map Node.js arch names to Linux lib directory names
+  const archPaths: Record<string, string> = {
+    x64: "/lib/x86_64-linux-gnu/libc.so.6",
+    arm64: "/lib/aarch64-linux-gnu/libc.so.6",
+    arm: "/lib/arm-linux-gnueabihf/libc.so.6",
+  };
+
+  return archPaths[arch] ?? null;
+}
 
 describe("PostgreSQL Command Execution", () => {
   beforeAll(async () => {
@@ -277,11 +300,18 @@ describe("PostgreSQL Command Execution", () => {
    * @kb-section C Function Loading
    */
   describe("C function loading (system())", () => {
-    test("CREATE FUNCTION from C requires superuser", async () => {
+    test("CREATE FUNCTION from C requires superuser", async (context) => {
+      const libcPath = getLibcPath();
+      if (libcPath === null) {
+        // Skip on non-Linux or unsupported architectures
+        context.skip();
+        return;
+      }
+
       // Attempt to create C function - should fail without superuser
       const { success } = await directSQL(`
         CREATE OR REPLACE FUNCTION test_system(cstring) RETURNS int
-        AS '/lib/x86_64-linux-gnu/libc.so.6', 'system'
+        AS '${libcPath}', 'system'
         LANGUAGE C STRICT
       `);
       // Will fail - C is untrusted language

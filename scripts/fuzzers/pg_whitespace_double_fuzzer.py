@@ -35,7 +35,8 @@ def main():
         cur = conn.cursor()
 
         cur.execute("SELECT version()")
-        version = cur.fetchone()[0].split(',')[0]
+        row = cur.fetchone()
+        version = row[0].split(',')[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
         if verbose:
             print("Verbose mode enabled - exceptions will be logged")

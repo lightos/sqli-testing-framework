@@ -8,7 +8,8 @@ import os
 import requests
 import sys
 
-BASE_URL = "http://localhost:3000"
+# Target URL - override with BASE_URL environment variable
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:3000")
 
 
 def validate_outfile(path: str, force: bool = False) -> str:
@@ -39,11 +40,9 @@ def validate_outfile(path: str, force: bool = False) -> str:
     normalized = os.path.normpath(path)
     abs_path = os.path.abspath(normalized)
     cwd = os.getcwd()
-    if not abs_path.startswith(cwd + os.sep) and abs_path != cwd:
-        # Allow files directly in cwd
-        if os.path.dirname(abs_path) != cwd:
-            print(f"ERROR: Path escapes current directory: {path}", file=sys.stderr)
-            sys.exit(1)
+    if not (abs_path == cwd or abs_path.startswith(cwd + os.sep)):
+        print(f"ERROR: Path escapes current directory: {path}", file=sys.stderr)
+        sys.exit(1)
 
     # Check if target directory exists
     target_dir = os.path.dirname(normalized) or "."
@@ -91,7 +90,7 @@ def test_payload(endpoint, param, payload, desc=None):
             return {**result_base, "success": False, "error": data["error"][:50]}
         else:
             return {**result_base, "success": True, "data": data}
-    except Exception as e:
+    except requests.RequestException as e:
         return {**result_base, "success": False, "error": str(e)[:50]}
 
 
@@ -114,12 +113,14 @@ def main():
         r = requests.get(f"{BASE_URL}/users?id=1", timeout=5)
         baseline = r.json()
         print(f"\nBaseline: {baseline}\n")
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"ERROR: App not running? {e}")
         sys.exit(1)
 
     results = []
     results.append("# PostgreSQL WAF Evasion HTTP Fuzzing Results\n")
+    total_tests = 0
+    successful_tests = 0
 
     # ===========================================
     # 1. DOLLAR QUOTE VARIATIONS
@@ -143,7 +144,11 @@ def main():
 
     for payload, desc in dollar_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}: `{payload[:50]}`")
 
@@ -173,7 +178,11 @@ def main():
 
     for payload, desc in encoding_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}")
 
@@ -201,8 +210,12 @@ def main():
 
     for payload, desc in bool_tests:
         r = test_payload("/users", "id", payload, desc)
+        total_tests += 1
         # Success = got multiple users back
-        status = "✓" if r["success"] and r.get("count", 0) > 1 else "✗"
+        success = r["success"] and r.get("count", 0) > 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}: `{payload}`")
 
@@ -236,11 +249,14 @@ def main():
 
     for payload, desc in numeric_tests:
         r = test_payload("/users", "id", payload, desc)
+        total_tests += 1
         # Success = got admin user (id=1)
         got_admin = False
         if r["success"] and "data" in r:
             users = r["data"].get("users", [])
             got_admin = any(u.get("username") == "admin" for u in users)
+        if got_admin:
+            successful_tests += 1
         status = "✓" if got_admin else "✗"
         print(f"  {status} {desc}")
         results.append(f"- {status} {desc}: `{payload}`")
@@ -273,7 +289,11 @@ def main():
 
     for payload, desc in operator_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}")
 
@@ -298,10 +318,13 @@ def main():
 
     for payload, desc in cast_tests:
         r = test_payload("/users", "id", payload, desc)
+        total_tests += 1
         got_admin = False
         if r["success"] and "data" in r:
             users = r["data"].get("users", [])
             got_admin = any(u.get("username") == "admin" for u in users)
+        if got_admin:
+            successful_tests += 1
         status = "✓" if got_admin else "✗"
         print(f"  {status} {desc}")
         results.append(f"- {status} {desc}: `{payload}`")
@@ -323,7 +346,11 @@ def main():
 
     for payload, desc in schema_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}")
 
@@ -359,7 +386,11 @@ def main():
 
     for payload, desc in union_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}")
 
@@ -382,9 +413,17 @@ def main():
 
     for payload, desc in combined_tests:
         r = test_payload("/users", "id", payload, desc)
-        status = "✓" if r["success"] and r.get("count", 0) >= 1 else "✗"
+        total_tests += 1
+        success = r["success"] and r.get("count", 0) >= 1
+        if success:
+            successful_tests += 1
+        status = "✓" if success else "✗"
         print(f"  {status} {desc}: {r.get('count', r.get('error', 'ERR'))}")
         results.append(f"- {status} {desc}")
+
+    # Print summary
+    print(f"\nSummary: {successful_tests}/{total_tests} payloads bypassed WAF")
+    results.append(f"\n## Summary\n- Total: {total_tests}\n- Bypassed: {successful_tests}\n- Blocked: {total_tests - successful_tests}")
 
     # Write results
     output_content = '\n'.join(results)
@@ -394,7 +433,7 @@ def main():
             f.write(output_content)
             f.flush()
             os.fsync(f.fileno())
-    except (IOError, OSError) as e:
+    except OSError as e:
         write_failed = True
         print(f"\nERROR: Failed to write to {outfile}: {e}", file=sys.stderr)
         print("Outputting results to stderr instead:\n", file=sys.stderr)
@@ -410,4 +449,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

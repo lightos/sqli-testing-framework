@@ -581,13 +581,20 @@ describe("MySQL Fuzzing and Obfuscation", () => {
       expect(result.success).toBe(true);
 
       const result2 = await mysqlDirectSQL("PREPARE stmt FROM @x");
-      expect(result2.success).toBe(true);
+      if (!result2.success) {
+        // PREPARE failed, nothing to deallocate
+        expect(result2.success).toBe(true);
+        return;
+      }
 
-      const result3 = await mysqlDirectSQL("EXECUTE stmt");
-      expect(result3.success).toBe(true);
-      expect(result3.result?.rows[0]).toHaveProperty("val", 1);
-
-      await mysqlDirectSQL("DEALLOCATE PREPARE stmt");
+      try {
+        const result3 = await mysqlDirectSQL("EXECUTE stmt");
+        expect(result3.success).toBe(true);
+        expect(result3.result?.rows[0]).toHaveProperty("val", 1);
+      } finally {
+        // Always deallocate if PREPARE succeeded
+        await mysqlDirectSQL("DEALLOCATE PREPARE stmt");
+      }
     });
   });
 
@@ -1073,12 +1080,21 @@ describe("MySQL Whitespace via HTTP Layer", () => {
       dbPassword: process.env.MYSQL_PASSWORD ?? "testpass",
       dbName: process.env.MYSQL_DATABASE ?? "vulndb",
     });
+
     // Get the actual port assigned by the OS
-    const addr = server.server.address();
-    if (addr && typeof addr === "object") {
-      port = addr.port;
-    } else {
-      throw new Error("Failed to get server address");
+    // Wrap in try/catch to ensure cleanup if address extraction fails
+    try {
+      const addr = server.server.address();
+      if (addr && typeof addr === "object") {
+        port = addr.port;
+      } else {
+        throw new Error("Failed to get server address");
+      }
+    } catch (err) {
+      // Clean up server before re-throwing
+      server.server.close();
+      await server.cleanup();
+      throw err;
     }
   }, 30000);
 

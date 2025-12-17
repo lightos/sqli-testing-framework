@@ -2,10 +2,9 @@
 """
 PostgreSQL Whitespace HTTP Fuzzer
 Tests whitespace characters through a vulnerable web app.
-
-Usage: python pg_whitespace_http_fuzzer.py [base_url] [outfile] [--verbose]
 """
 
+import argparse
 import requests
 import sys
 import urllib.parse
@@ -18,27 +17,50 @@ def log_debug(verbose: bool, msg: str) -> None:
         print(f"[DEBUG] {msg}", file=sys.stderr)
 
 
-def main():
-    # Parse arguments
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL Whitespace HTTP Fuzzer - Tests whitespace characters through a vulnerable web app."
+    )
+    parser.add_argument(
+        "base_url",
+        nargs="?",
+        default="http://localhost:3000",
+        help="Base URL of the vulnerable web app (default: http://localhost:3000)"
+    )
+    parser.add_argument(
+        "outfile",
+        nargs="?",
+        default="pg_http_whitespace_results.txt",
+        help="Output file for results (default: pg_http_whitespace_results.txt)"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output - log exceptions to stderr"
+    )
+    return parser.parse_args()
 
-    base_url = args[0] if args else "http://localhost:3000"
-    outfile = args[1] if len(args) > 1 else "pg_http_whitespace_results.txt"
+
+def main():
+    args = parse_args()
+    base_url = args.base_url
+    outfile = args.outfile
+    verbose = args.verbose
 
     print(f"Target: {base_url}")
     if verbose:
         print("Verbose mode enabled - exceptions will be logged")
     print(f"Output: {outfile}")
 
-    # Test baseline
-    print("\nTesting baseline...")
+    # Verify target is reachable
+    print("\nVerifying target connectivity...")
     try:
         r = requests.get(f"{base_url}/users?id=1", timeout=5)
-        baseline = r.json()
-        print(f"  Baseline response: {baseline}")
+        r.json()  # Verify JSON response
+        print("  Target is reachable")
     except Exception as e:
-        print(f"  ERROR: {e}")
+        print(f"  ERROR: Cannot reach target: {e}")
         return 1
 
     # Test basic UNION injection
@@ -154,6 +176,8 @@ def main():
                 print(f"  {desc}: VALID")
             else:
                 print(f"  {desc}: blocked")
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             print(f"  {desc}: error - {e}")
 

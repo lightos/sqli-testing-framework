@@ -36,7 +36,8 @@ def main():
         cur = conn.cursor()
 
         cur.execute("SELECT version()")
-        version = cur.fetchone()[0].split(',')[0]
+        row = cur.fetchone()
+        version = row[0].split(',')[0] if row else "unknown"
 
         single_ws = {0x09, 0x0A, 0x0C, 0x0D, 0x20}
         non_ws = [b for b in range(128) if b not in single_ws]  # 123 bytes
@@ -227,13 +228,25 @@ def main():
         results.append("Only known whitespace characters work in 4-byte sequences.")
 
     # Write to file
-    with open(outfile, 'w') as f:
-        f.write('\n'.join(results))
-
-    print("\n" + "=" * 60)
-    print(f"RESULTS: {len(unexpected)} unexpected combinations")
-    print(f"Written to: {outfile}")
-    print("=" * 60)
+    content = '\n'.join(results)
+    try:
+        with open(outfile, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print("\n" + "=" * 60)
+        print(f"RESULTS: {len(unexpected)} unexpected combinations")
+        print(f"Written to: {outfile}")
+        print("=" * 60)
+    except (IOError, OSError) as e:
+        print(f"\nERROR: Failed to write results to {outfile}: {e}", file=sys.stderr)
+        # Attempt to save partial results to a fallback file
+        partial_file = f"{outfile}.partial"
+        try:
+            with open(partial_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Partial results saved to: {partial_file}", file=sys.stderr)
+        except (IOError, OSError) as e2:
+            print(f"Failed to save partial results: {e2}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

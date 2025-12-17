@@ -19,22 +19,32 @@ def get_pg_connection(port=None):
 
     Environment variables:
         PGHOST: Database host (default: localhost)
-        PGPORT: Database port (default: 5432, or port parameter)
+        PGPORT: Database port (used if port parameter not provided)
         PGUSER: Database user (default: postgres)
         PGPASSWORD: Database password (required)
         PGDATABASE: Database name (default: postgres)
 
     Args:
-        port: Optional port override (for CLI argument compatibility)
+        port: Optional port override. Takes precedence over PGPORT env var.
 
     Returns:
         psycopg2 connection with autocommit=True
 
     Raises:
-        ValueError: If PGPASSWORD is not set
+        ValueError: If PGPASSWORD is not set or port is invalid
     """
     host = os.environ.get("PGHOST", "localhost")
-    db_port = int(os.environ.get("PGPORT", port or 5432))
+
+    # Port precedence: parameter > PGPORT env > 5432 default
+    if port is not None:
+        db_port = int(port)
+    elif "PGPORT" in os.environ:
+        try:
+            db_port = int(os.environ["PGPORT"])
+        except ValueError:
+            raise ValueError(f"Invalid PGPORT environment variable: '{os.environ['PGPORT']}' is not a valid port number")
+    else:
+        db_port = 5432
     user = os.environ.get("PGUSER", "postgres")
     password = os.environ.get("PGPASSWORD")
     database = os.environ.get("PGDATABASE", "postgres")

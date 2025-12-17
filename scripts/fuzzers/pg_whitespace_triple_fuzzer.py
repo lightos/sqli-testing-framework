@@ -25,14 +25,19 @@ def main():
 
     port = int(args[0]) if args else 5432
 
+    # Initialize variables before try block to avoid NameError if connection fails
     conn = None
     cur = None
+    known_valid = 0
+    unexpected = set()
+
     try:
         conn = get_pg_connection(port)
         cur = conn.cursor()
 
         cur.execute("SELECT version()")
-        version = cur.fetchone()[0].split(',')[0]
+        row = cur.fetchone()
+        version = row[0].split(',')[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
         if verbose:
             print("Verbose mode enabled - exceptions will be logged")
@@ -42,7 +47,6 @@ def main():
 
         # First, verify all-known-ws combinations work (5^3 = 125)
         print("\nPhase 1: Testing all known whitespace combos (5³ = 125)...")
-        known_valid = 0
         for combo in product(single_ws, repeat=3):
             try:
                 chars = ''.join(chr(c) for c in combo)
@@ -64,7 +68,6 @@ def main():
         # Test bytes: 0x00-0x20 range plus some interesting ones
         test_bytes = [*range(0x21), 0x7F, 0xA0, 0x85]  # control chars + DEL + NBSP + NEL
 
-        unexpected = set()
         tested = 0
 
         for combo in product(test_bytes, repeat=3):

@@ -33,7 +33,11 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
   describe("Network Information Functions", () => {
     test("inet_server_addr() returns IP address", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT inet_server_addr()::text as addr");
-      const addr = (rows[0] as { addr: string }).addr;
+      const addr = (rows[0] as { addr: string | null }).addr;
+      // May be null if connected via unix socket
+      if (addr === null) {
+        return; // Skip validation for unix socket connections
+      }
       // Strip CIDR suffix if present (e.g., "192.168.1.1/32" -> "192.168.1.1")
       const ipOnly = addr.split("/")[0];
       // Use Node's net.isIP() for proper validation (returns 4 for IPv4, 6 for IPv6, 0 for invalid)
@@ -116,13 +120,14 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("pg_control_system() (Superuser)", async () => {
       // This requires superuser via pg_read_all_settings or similar usually?
       // Actually pg_control_system is restricted.
-      const { success, error } = await directSQL(
+      const { success, error, result } = await directSQL(
         "SELECT system_identifier FROM pg_control_system()"
       );
       if (!success) {
         expect(error?.message).toMatch(/permission denied|does not exist/i);
       } else {
-        expect(success).toBe(true);
+        // Verify the query returned a system identifier
+        expect(result?.rows[0]).toHaveProperty("system_identifier");
       }
     });
   });
@@ -135,16 +140,17 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("Attempt pg_read_file on /sys/class/net/eth0/address", async () => {
       // Note: Interface might be eth0, ens33, etc. This is opportunistic.
       // And strict pg_read_file restriction usually blocks absolute paths anyway unless superuser config allows.
-      const { success, error } = await directSQL(
-        "SELECT pg_read_file('/sys/class/net/eth0/address')"
+      const { success, error, result } = await directSQL(
+        "SELECT pg_read_file('/sys/class/net/eth0/address') as mac"
       );
 
       if (!success) {
         // Expect permission denied or path restriction error
         expect(error?.message).toMatch(/permission denied|absolute path not allowed|no such file/i);
       } else {
-        // If it worked (unlikely but possible in loose container), check format
-        expect(success).toBe(true);
+        // If it worked (unlikely but possible in loose container), verify we got data
+        expect(result).toBeDefined();
+        expect((result?.rows[0] as { mac: string }).mac).toBeDefined();
       }
     });
   });
@@ -162,9 +168,9 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
 
       if (!success) {
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
-      } else {
-        expect(success).toBe(true);
       }
+      // If success, the COPY command executed - no additional assertion needed
+      // as the query completing without error is sufficient validation
     });
   });
 });

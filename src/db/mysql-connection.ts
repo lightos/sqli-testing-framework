@@ -18,13 +18,16 @@ export interface MySQLQueryResult {
 
 /**
  * Type guard to check if result is a ResultSetHeader (non-SELECT result)
+ * Checks for both affectedRows and fieldCount to robustly discriminate from row data
  */
 function isResultSetHeader(result: unknown): result is ResultSetHeader {
   return (
     result !== null &&
     typeof result === "object" &&
     "affectedRows" in result &&
-    typeof (result as ResultSetHeader).affectedRows === "number"
+    typeof (result as ResultSetHeader).affectedRows === "number" &&
+    "fieldCount" in result &&
+    typeof (result as ResultSetHeader).fieldCount === "number"
   );
 }
 
@@ -56,9 +59,8 @@ export class MySQLConnectionManager {
       database: this.config.database,
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0,
+      queueLimit: 50,
       connectTimeout: 10000, // 10 seconds
-      acquireTimeout: 10000,
     });
 
     // Test connection
@@ -115,7 +117,20 @@ export class MySQLConnectionManager {
       };
     }
 
-    // Fallback for unexpected result types
+    // Fallback for unexpected result types - log for diagnostics
+    let valueStr: string;
+    try {
+      valueStr = JSON.stringify(rows, (_key, val: unknown) =>
+        typeof val === "bigint" ? val.toString() : val
+      ).slice(0, 500);
+    } catch {
+      valueStr = "[unstringifiable]";
+    }
+    logger.warn("Unexpected MySQL query result type", {
+      type: typeof rows,
+      constructor: (rows as object).constructor.name,
+      value: valueStr,
+    });
     return {
       rows: [],
       rowCount: 0,

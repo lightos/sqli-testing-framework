@@ -4,7 +4,7 @@ PostgreSQL Multi-Statement Test for psycopg2
 
 Tests multi-statement support in:
 - cursor.execute() without params - should support multi-statements
-- cursor.execute() with params - should NOT support multi-statements
+- cursor.execute() with params - should support multi-statements (client-side substitution)
 
 Run: python test-stacked-queries.py
 """

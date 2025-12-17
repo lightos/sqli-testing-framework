@@ -61,7 +61,7 @@ export async function mysqlDirectSQL(sql: string): Promise<MySQLExecutionResult>
  */
 export async function mysqlDirectSQLExpectSuccess(
   sql: string
-): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> {
+): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
   if (!adapter) {
     throw new Error("MySQL direct runner not initialized. Call initMySQLDirectRunner() first.");
   }

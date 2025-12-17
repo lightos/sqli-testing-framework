@@ -73,11 +73,12 @@ export class MySQLAdapter {
   /**
    * Test if a timing-based injection is successful.
    * Validates both lower bound (delay occurred) and optionally upper bound (not too slow).
+   * Tolerance is applied symmetrically to both bounds.
    *
    * @param sql - SQL query to execute
    * @param expectedDelayMs - Expected delay in milliseconds
-   * @param toleranceMs - Tolerance for lower bound check (default 200ms)
-   * @param maxExpectedMs - Optional upper bound; if provided, validates timing <= maxExpectedMs
+   * @param toleranceMs - Tolerance applied to both bounds (default 200ms)
+   * @param maxExpectedMs - Optional upper bound; tolerance is added to this value
    */
   async testTimingInjection(
     sql: string,
@@ -87,14 +88,21 @@ export class MySQLAdapter {
   ): Promise<boolean> {
     const { timing } = await this.execute(sql);
     const minExpected = expectedDelayMs - toleranceMs;
-    const maxAllowed = maxExpectedMs ?? Infinity;
+    // Apply tolerance symmetrically: add tolerance to upper bound when provided
+    const maxAllowed = maxExpectedMs !== undefined ? maxExpectedMs + toleranceMs : Infinity;
 
     const meetsLowerBound = timing.durationMs >= minExpected;
     const meetsUpperBound = timing.durationMs <= maxAllowed;
 
+    const upperBoundMsg =
+      maxExpectedMs !== undefined ? `, <= ${maxAllowed}ms (${maxExpectedMs}+${toleranceMs})` : "";
     logger.debug(
-      `Timing test: ${timing.durationMs}ms (expected >= ${minExpected}ms${maxExpectedMs ? `, <= ${maxExpectedMs}ms` : ""})`,
-      { sql: sql.substring(0, 100), meetsLowerBound, meetsUpperBound }
+      `Timing test: ${timing.durationMs}ms (expected >= ${minExpected}ms${upperBoundMsg})`,
+      {
+        sql: sql.substring(0, 100),
+        meetsLowerBound,
+        meetsUpperBound,
+      }
     );
 
     return meetsLowerBound && meetsUpperBound;

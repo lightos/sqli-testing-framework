@@ -12,9 +12,9 @@ import traceback
 from datetime import datetime, timezone
 
 class PgFuzzer:
-    def __init__(self, port=5432):
+    def __init__(self, default_port=5432):
         host = os.environ.get("PGHOST", "localhost")
-        port = int(os.environ.get("PGPORT", port))
+        port = int(os.environ.get("PGPORT", default_port))
         user = os.environ.get("PGUSER", "postgres")
         password = os.environ.get("PGPASSWORD")
         database = os.environ.get("PGDATABASE", "postgres")
@@ -654,6 +654,8 @@ def main():
         successful = len([r for r in results if r[1]])
         print(f"  {section}: {successful}/{len(results)} passed")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

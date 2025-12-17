@@ -434,8 +434,13 @@ describe("PostgreSQL Privilege Escalation", () => {
       try {
         expect(typeof success).toBe("boolean");
       } finally {
-        // Always attempt cleanup
-        await directSQL("DROP ROLE IF EXISTS backdoor_test");
+        // Always attempt cleanup - log failures but don't throw to avoid disrupting teardown
+        const cleanup = await directSQL("DROP ROLE IF EXISTS backdoor_test");
+        if (!cleanup.success) {
+          console.error(
+            `Failed to cleanup backdoor_test role: ${cleanup.error?.message ?? "unknown error"}`
+          );
+        }
       }
     });
 

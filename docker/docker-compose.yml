@@ -4,7 +4,7 @@ services:
     image: mysql:5.7
     container_name: sqli-mysql57
     ports:
-      - "3306:3306"
+      - "3308:3306"
     environment:
       MYSQL_ROOT_PASSWORD: testpass
       MYSQL_DATABASE: vulndb
@@ -15,6 +15,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    profiles:
+      - mysql
 
   # MySQL 8.0 - latest stable version
   mysql-80:
@@ -32,6 +34,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    profiles:
+      - mysql
 
   # PostgreSQL 12 - oldest supported version for testing
   postgres-12:
@@ -75,8 +79,8 @@ services:
     container_name: sqli-test-php
     working_dir: /tests
     command: >
-      sh -c "apt-get update -qq && apt-get install -y -qq libpq-dev > /dev/null 2>&1 &&
-             docker-php-ext-install pgsql > /dev/null 2>&1 &&
+      sh -c "apt-get update -qq && apt-get install -y -qq libpq-dev > /dev/null &&
+             docker-php-ext-install pgsql > /dev/null &&
              php test-stacked-queries.php"
     volumes:
       - ../drivers/php:/tests:ro

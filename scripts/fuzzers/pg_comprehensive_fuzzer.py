@@ -602,8 +602,14 @@ def main():
 
         # Write to temp file first for atomic operation
         fd, tmpfile = tempfile.mkstemp(dir=outdir or '.', suffix='.tmp')
+        # Wrap fdopen to ensure fd is closed if fdopen fails
         try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f = os.fdopen(fd, 'w', encoding='utf-8')
+        except Exception:
+            os.close(fd)
+            raise
+        try:
+            with f:
                 f.write("# PostgreSQL Comprehensive Fuzzing Results\n")
                 f.write(f"Version: {all_results.get('version', 'unknown')}\n")
                 f.write(f"Timestamp: {all_results.get('timestamp', 'unknown')}\n\n")

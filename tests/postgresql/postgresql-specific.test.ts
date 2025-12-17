@@ -455,10 +455,12 @@ describe("PostgreSQL-specific Code", () => {
 
     test("lo_import imports file (requires privileges)", async () => {
       const { success, error } = await directSQL("SELECT lo_import('/etc/passwd')");
-      if (!success) {
+      // Either succeeds (has privileges) or fails with expected permission error
+      if (success) {
+        expect(error).toBeUndefined();
+      } else {
         expect(error?.message).toMatch(/permission denied|could not open/i);
       }
-      expect(true).toBe(true);
     });
 
     test("lo_export writes large object to file (requires privileges)", async () => {
@@ -534,21 +536,37 @@ describe("PostgreSQL-specific Code", () => {
    */
   describe("Prepared statements", () => {
     test("PREPARE and EXECUTE statement", async () => {
-      await directSQL("PREPARE test_stmt AS SELECT * FROM users WHERE id = $1");
-      const { rows } = await directSQLExpectSuccess("EXECUTE test_stmt(1)");
-      expect(rows.length).toBeGreaterThan(0);
-      await directSQL("DEALLOCATE test_stmt");
+      const { success: prepareSuccess } = await directSQL(
+        "PREPARE test_stmt AS SELECT * FROM users WHERE id = $1"
+      );
+      expect(prepareSuccess).toBe(true);
+
+      try {
+        const { rows } = await directSQLExpectSuccess("EXECUTE test_stmt(1)");
+        expect(rows.length).toBeGreaterThan(0);
+      } finally {
+        await directSQL("DEALLOCATE test_stmt");
+      }
     });
 
     test("PREPARE with multiple parameters", async () => {
-      await directSQL("PREPARE multi_stmt AS SELECT * FROM users WHERE id = $1 AND username = $2");
-      const { rows } = await directSQLExpectSuccess("EXECUTE multi_stmt(1, 'admin')");
-      expect(rows.length).toBeGreaterThan(0);
-      await directSQL("DEALLOCATE multi_stmt");
+      const { success: prepareSuccess } = await directSQL(
+        "PREPARE multi_stmt AS SELECT * FROM users WHERE id = $1 AND username = $2"
+      );
+      expect(prepareSuccess).toBe(true);
+
+      try {
+        const { rows } = await directSQLExpectSuccess("EXECUTE multi_stmt(1, 'admin')");
+        expect(rows.length).toBeGreaterThan(0);
+      } finally {
+        await directSQL("DEALLOCATE multi_stmt");
+      }
     });
 
     test("DEALLOCATE removes prepared statement", async () => {
-      await directSQL("PREPARE dealloc_test AS SELECT 1");
+      const { success: prepareSuccess } = await directSQL("PREPARE dealloc_test AS SELECT 1");
+      expect(prepareSuccess).toBe(true);
+
       const { success: deallocSuccess } = await directSQL("DEALLOCATE dealloc_test");
       expect(deallocSuccess).toBe(true);
 
@@ -678,21 +696,31 @@ describe("PostgreSQL-specific Code", () => {
 
     test("COPY FROM STDIN syntax check", async () => {
       // COPY FROM STDIN requires INSERT privilege only, not file access
-      // Can't fully test without stdin data, but verify syntax
+      // We can't send stdin data through this test framework, but we can verify
+      // the syntax is accepted (error should be about stdin/data, not syntax)
       await directSQL("CREATE TEMP TABLE IF NOT EXISTS copy_test (val TEXT)");
-      // This will fail waiting for data but syntax is valid
-      expect(true).toBe(true);
-      await directSQL("DROP TABLE IF EXISTS copy_test");
+      try {
+        const { success, error } = await directSQL("COPY copy_test FROM STDIN");
+        // Either succeeds (waiting for data) or fails with stdin-related error
+        if (!success) {
+          // Should fail because no stdin data, not because of syntax
+          expect(error?.message).toMatch(/stdin|COPY|data/i);
+        }
+      } finally {
+        await directSQL("DROP TABLE IF EXISTS copy_test");
+      }
     });
 
     test("COPY with CSV format options", async () => {
       const { success, error } = await directSQL(
         "COPY (SELECT 1, 'test') TO '/tmp/csv_test.csv' WITH (FORMAT csv, HEADER true)"
       );
-      if (!success) {
+      // Either succeeds (has privileges) or fails with expected permission error
+      if (success) {
+        expect(error).toBeUndefined();
+      } else {
         expect(error?.message).toMatch(/permission denied|could not open/i);
       }
-      expect(true).toBe(true);
     });
   });
 
@@ -708,8 +736,10 @@ describe("PostgreSQL-specific Code", () => {
       if (!success) {
         // Function exists but permission denied
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
+      } else {
+        // Superuser context - function succeeded
+        expect(success).toBe(true);
       }
-      expect(true).toBe(true);
     });
 
     test("Check server version for feature availability", async () => {

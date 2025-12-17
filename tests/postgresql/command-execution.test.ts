@@ -274,45 +274,9 @@ describe("PostgreSQL Command Execution", () => {
 
   /**
    * @kb-entry postgresql/command-execution
-   * @kb-section Untrusted Language Availability
-   */
-  describe("Untrusted language availability", () => {
-    test("Check if plpython3u is available for installation", async () => {
-      const { rows } = await directSQLExpectSuccess(
-        "SELECT * FROM pg_available_extensions WHERE name = 'plpython3u'"
-      );
-      // May or may not be available depending on PostgreSQL installation
-      expect(rows.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test("Check if plperlu is available for installation", async () => {
-      const { rows } = await directSQLExpectSuccess(
-        "SELECT * FROM pg_available_extensions WHERE name = 'plperlu'"
-      );
-      expect(rows.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test("Check if pltclu is available for installation", async () => {
-      const { rows } = await directSQLExpectSuccess(
-        "SELECT * FROM pg_available_extensions WHERE name = 'pltclu'"
-      );
-      expect(rows.length).toBeGreaterThanOrEqual(0);
-    });
-  });
-
-  /**
-   * @kb-entry postgresql/command-execution
    * @kb-section C Function Loading
    */
   describe("C function loading (system())", () => {
-    test("Check dynamic_library_path setting", async () => {
-      const { rows } = await directSQLExpectSuccess(
-        "SELECT current_setting('dynamic_library_path') as path"
-      );
-      const path = (rows[0] as { path: string }).path;
-      expect(path).toBeTruthy();
-    });
-
     test("CREATE FUNCTION from C requires superuser", async () => {
       // Attempt to create C function - should fail without superuser
       const { success } = await directSQL(`

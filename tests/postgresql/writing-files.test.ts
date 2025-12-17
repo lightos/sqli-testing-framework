@@ -466,7 +466,7 @@ describe("PostgreSQL Writing Files", () => {
       expect(true).toBe(true);
     });
 
-    test("Test write then verify via pg_read_file", async () => {
+    test("Test write then verify via lo_get", async () => {
       // Verify the complete write+read workflow
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'verify write'::bytea) as oid"

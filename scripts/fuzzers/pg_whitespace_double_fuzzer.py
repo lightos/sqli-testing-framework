@@ -2,14 +2,26 @@
 """
 PostgreSQL Double Whitespace Character Fuzzer
 Tests all combinations of two bytes (0x00-0xFF) as whitespace.
+
+Usage: python pg_whitespace_double_fuzzer.py [port] [--verbose]
 """
 
 import sys
 from fuzzer_utils import get_pg_connection
 
 
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
+
+
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    port = int(args[0]) if args else 5432
 
     conn = None
     cur = None
@@ -25,6 +37,8 @@ def main():
         cur.execute("SELECT version()")
         version = cur.fetchone()[0].split(',')[0]
         print(f"PostgreSQL: {version}")
+        if verbose:
+            print("Verbose mode enabled - exceptions will be logged")
         print("Testing all 2-byte combinations (0x00-0xFF x 0x00-0xFF = 65536 combos)...\n")
 
         for i in range(256):
@@ -38,8 +52,11 @@ def main():
                         # Check if this is just two known whitespace chars
                         both_known = i in single_ws and j in single_ws
                         valid.append((i, j, both_known))
-                except Exception:
-                    pass
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    # Expected: most combinations will fail with syntax errors
+                    log_debug(verbose, f"0x{i:02X}{j:02X}: {type(e).__name__}: {e}")
 
             if i % 16 == 0:
                 print(f"  ...tested {i * 256} combinations, found {len(valid)} valid", file=sys.stderr)

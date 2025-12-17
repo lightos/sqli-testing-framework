@@ -2,6 +2,8 @@
 """
 PostgreSQL Whitespace HTTP Fuzzer
 Tests whitespace characters through a vulnerable web app.
+
+Usage: python pg_whitespace_http_fuzzer.py [base_url] [outfile] [--verbose]
 """
 
 import requests
@@ -10,11 +12,23 @@ import urllib.parse
 from fuzzer_utils import get_char_description
 
 
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
+
+
 def main():
-    base_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3000"
-    outfile = sys.argv[2] if len(sys.argv) > 2 else "pg_http_whitespace_results.txt"
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    base_url = args[0] if args else "http://localhost:3000"
+    outfile = args[1] if len(args) > 1 else "pg_http_whitespace_results.txt"
 
     print(f"Target: {base_url}")
+    if verbose:
+        print("Verbose mode enabled - exceptions will be logged")
     print(f"Output: {outfile}")
 
     # Test baseline
@@ -65,8 +79,11 @@ def main():
             if "users" in data and len(data["users"]) >= 2:
                 single_valid.append(i)
                 print(f"  0x{i:02X} ({encoded:6}) - VALID")
-        except Exception:
-            pass
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            # Expected: most requests will fail or return no injection results
+            log_debug(verbose, f"Single 0x{i:02X}: {type(e).__name__}: {e}")
 
     results.append("## Single Character Whitespace")
     results.append("")
@@ -87,6 +104,8 @@ def main():
 
     ws_chars = [0x09, 0x0A, 0x0C, 0x0D, 0x20]
     comment_valid = []
+    total_tests = 128 * len(ws_chars)
+    tested = 0
 
     for i in range(128):
         for j in ws_chars:
@@ -102,8 +121,15 @@ def main():
                     if i not in ws_chars:  # Only log unexpected ones
                         comment_valid.append((i, j))
                         print(f"  0x{i:02X} + 0x{j:02X} - VALID (unexpected!)")
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                # Expected: most combinations will fail
+                log_debug(verbose, f"Comment 0x{i:02X}+0x{j:02X}: {type(e).__name__}: {e}")
+
+            tested += 1
+            if tested % 100 == 0:
+                print(f"  ...tested {tested}/{total_tests} combinations", file=sys.stderr)
 
     # Test -- with newlines specifically
     print("\n" + "="*60)
@@ -164,7 +190,7 @@ def main():
         print(f"  /**/: error - {e}")
 
     # Write results
-    with open(outfile, 'w') as f:
+    with open(outfile, 'w', encoding='utf-8') as f:
         f.write('\n'.join(results))
 
     print("\n" + "=" * 60)

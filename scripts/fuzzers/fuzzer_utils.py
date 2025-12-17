@@ -6,6 +6,12 @@ Shared utilities for PostgreSQL fuzzers.
 import os
 import psycopg2
 
+# Error message for missing PGPASSWORD environment variable
+PGPASSWORD_REQUIRED_MSG = (
+    "PGPASSWORD environment variable is required. "
+    "Set it with: export PGPASSWORD=yourpassword"
+)
+
 
 def get_pg_connection(port=None):
     """
@@ -34,10 +40,7 @@ def get_pg_connection(port=None):
     database = os.environ.get("PGDATABASE", "postgres")
 
     if not password:
-        raise ValueError(
-            "PGPASSWORD environment variable is required. "
-            "Set it with: export PGPASSWORD=yourpassword"
-        )
+        raise ValueError(PGPASSWORD_REQUIRED_MSG)
 
     conn = psycopg2.connect(
         host=host, port=db_port, user=user,

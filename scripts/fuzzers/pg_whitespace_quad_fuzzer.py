@@ -2,6 +2,8 @@
 """
 PostgreSQL 4-byte Whitespace Fuzzer
 Tests 4-byte combinations (0x00-0x7F charset)
+
+Usage: python pg_whitespace_quad_fuzzer.py [port] [outfile] [--verbose]
 """
 
 import sys
@@ -9,9 +11,19 @@ from itertools import product
 from fuzzer_utils import get_pg_connection
 
 
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
+
+
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
-    outfile = sys.argv[2] if len(sys.argv) > 2 else "pg_quad_results.txt"
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    port = int(args[0]) if args else 5432
+    outfile = args[1] if len(args) > 1 else "pg_quad_results.txt"
 
     conn = None
     cur = None
@@ -34,6 +46,8 @@ def main():
         results.append("")
 
         print(f"PostgreSQL: {version}")
+        if verbose:
+            print("Verbose mode enabled - exceptions will be logged")
         print(f"Output: {outfile}")
 
         # Phase 1: All known ws (5^4 = 625)
@@ -44,8 +58,10 @@ def main():
                 cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                 if len(cur.fetchall()) == 2:
                     known_valid += 1
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                log_debug(verbose, f"Phase1 {combo}: {type(e).__name__}: {e}")
         print(f"  Valid: {known_valid}/625")
         results.append(f"Known whitespace 4-byte combos: {known_valid}/625")
 
@@ -59,9 +75,11 @@ def main():
                     chars = chr(b) + ''.join(chr(c) for c in combo)
                     cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                     if len(cur.fetchall()) == 2:
-                        unexpected.add((b,) + combo)
-                except Exception:
-                    pass
+                        unexpected.add((b, *combo))
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    log_debug(verbose, f"Phase2 ({b:02X},ws,ws,ws): {type(e).__name__}: {e}")
         print(f"  Tested: {count}")
 
         # Phase 3: [ws][x][ws][ws]
@@ -75,9 +93,11 @@ def main():
                         chars = chr(w1) + chr(b) + ''.join(chr(c) for c in combo)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
-                            unexpected.add((w1, b) + combo)
-                    except Exception:
-                        pass
+                            unexpected.add((w1, b, *combo))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        log_debug(verbose, f"Phase3 ({w1:02X},{b:02X},ws,ws): {type(e).__name__}: {e}")
         print(f"  Tested: {count}")
 
         # Phase 4: [ws][ws][x][ws]
@@ -91,9 +111,11 @@ def main():
                         chars = ''.join(chr(c) for c in combo) + chr(b) + chr(w)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
-                            unexpected.add(combo + (b, w))
-                    except Exception:
-                        pass
+                            unexpected.add((*combo, b, w))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        log_debug(verbose, f"Phase4 (ws,ws,{b:02X},{w:02X}): {type(e).__name__}: {e}")
         print(f"  Tested: {count}")
 
         # Phase 5: [ws][ws][ws][x]
@@ -106,9 +128,11 @@ def main():
                     chars = ''.join(chr(c) for c in combo) + chr(b)
                     cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                     if len(cur.fetchall()) == 2:
-                        unexpected.add(combo + (b,))
-                except Exception:
-                    pass
+                        unexpected.add((*combo, b))
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    log_debug(verbose, f"Phase5 (ws,ws,ws,{b:02X}): {type(e).__name__}: {e}")
         print(f"  Tested: {count}")
 
         # Phase 6: [x][x][ws][ws] - two non-ws
@@ -122,9 +146,11 @@ def main():
                         chars = chr(b1) + chr(b2) + ''.join(chr(c) for c in combo)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
-                            unexpected.add((b1, b2) + combo)
-                    except Exception:
-                        pass
+                            unexpected.add((b1, b2, *combo))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        log_debug(verbose, f"Phase6 ({b1:02X},{b2:02X},ws,ws): {type(e).__name__}: {e}")
             if b1 % 20 == 0:
                 print(f"    ...{count} tested", file=sys.stderr)
         print(f"  Tested: {count}")
@@ -140,9 +166,11 @@ def main():
                         chars = ''.join(chr(c) for c in combo) + chr(b1) + chr(b2)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
-                            unexpected.add(combo + (b1, b2))
-                    except Exception:
-                        pass
+                            unexpected.add((*combo, b1, b2))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        log_debug(verbose, f"Phase7 (ws,ws,{b1:02X},{b2:02X}): {type(e).__name__}: {e}")
         print(f"  Tested: {count}")
 
         # Phase 8: [x][ws][x][ws] and [ws][x][ws][x] - alternating
@@ -158,15 +186,19 @@ def main():
                             cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                             if len(cur.fetchall()) == 2:
                                 unexpected.add((b1, w1, b2, w2))
-                        except Exception:
-                            pass
+                        except KeyboardInterrupt:
+                            raise
+                        except Exception as e:
+                            log_debug(verbose, f"Phase8a ({b1:02X},{w1:02X},{b2:02X},{w2:02X}): {type(e).__name__}: {e}")
                         try:
                             chars = chr(w1) + chr(b1) + chr(w2) + chr(b2)
                             cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                             if len(cur.fetchall()) == 2:
                                 unexpected.add((w1, b1, w2, b2))
-                        except Exception:
-                            pass
+                        except KeyboardInterrupt:
+                            raise
+                        except Exception as e:
+                            log_debug(verbose, f"Phase8b ({w1:02X},{b1:02X},{w2:02X},{b2:02X}): {type(e).__name__}: {e}")
         print(f"  Tested: {count * 2}")
     finally:
         if cur:

@@ -2,14 +2,26 @@
 """
 PostgreSQL Whitespace Character Fuzzer
 Tests Unicode range 0x0000-0xFFFF to find valid whitespace substitutes.
+
+Usage: python pg_whitespace_fuzzer.py [port] [--verbose]
 """
 
 import sys
 from fuzzer_utils import get_pg_connection, get_char_description, url_encode_char
 
 
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
+
+
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    port = int(args[0]) if args else 5432
 
     conn = None
     cur = None
@@ -21,8 +33,11 @@ def main():
         cur = conn.cursor()
 
         cur.execute("SELECT version()")
-        version = cur.fetchone()[0].split(',')[0]
+        row = cur.fetchone()
+        version = row[0].split(',')[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
+        if verbose:
+            print("Verbose mode enabled - exceptions will be logged")
         print("Testing 0x0000-0xFFFF as whitespace...\n")
 
         for i in range(0x10000):
@@ -35,8 +50,10 @@ def main():
                 result = cur.fetchall()
                 if len(result) == 2:
                     valid_whitespace.append(i)
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                log_debug(verbose, f"0x{i:04X} UNION test: {type(e).__name__}: {e}")
 
             # Test 2: Works after SELECT before column (includes unary operators)
             try:
@@ -46,8 +63,10 @@ def main():
                 if result and result[0] == 1:
                     if i not in valid_whitespace:
                         valid_after_select.append(i)
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                log_debug(verbose, f"0x{i:04X} SELECT test: {type(e).__name__}: {e}")
 
             if i % 5000 == 0 and i > 0:
                 print(f"  ...tested {i} characters", file=sys.stderr)

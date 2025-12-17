@@ -15,7 +15,7 @@ import time
 
 try:
     import psycopg2
-except ImportError as e:
+except ImportError:
     print("ERROR: psycopg2 not installed.", file=sys.stderr)
     print("Install with: pip install psycopg2-binary", file=sys.stderr)
     print("Or run via docker-compose which handles dependencies.", file=sys.stderr)
@@ -78,12 +78,16 @@ try:
     else:
         print("  FAIL: INSERT did not persist")
         failed += 1
-    # Cleanup
-    cursor.execute(f"DELETE FROM logs WHERE action = '{test_action}'")
 except Exception as e:
     print("  FAIL: execute() rejected stacked modification")
     print(f"  Error: {e}")
     failed += 1
+finally:
+    # Cleanup - always attempt to delete test rows
+    try:
+        cursor.execute(f"DELETE FROM logs WHERE action = '{test_action}'")
+    except Exception as cleanup_error:
+        print(f"  Warning: Cleanup failed: {cleanup_error}", file=sys.stderr)
 print()
 
 # Test 3: execute() with single statement + params (should work)

@@ -6,6 +6,7 @@
  * @kb-coverage postgresql/server-mac-address - Full coverage
  */
 
+import net from "node:net";
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import {
   initDirectRunner,
@@ -33,9 +34,11 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("inet_server_addr() returns IP address", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT inet_server_addr()::text as addr");
       const addr = (rows[0] as { addr: string }).addr;
-      // Depending on connection, could be IPv4 or IPv6, optionally with CIDR suffix
-      // Match IPv4 (e.g., 192.168.1.1 or 192.168.1.1/32) or IPv6 (e.g., 2001:db8::1)
-      expect(addr).toMatch(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\/\d+)?|[0-9a-f:]+(\/\d+)?)$/i);
+      // Strip CIDR suffix if present (e.g., "192.168.1.1/32" -> "192.168.1.1")
+      const ipOnly = addr.split("/")[0];
+      // Use Node's net.isIP() for proper validation (returns 4 for IPv4, 6 for IPv6, 0 for invalid)
+      const ipVersion = net.isIP(ipOnly);
+      expect(ipVersion).toBeGreaterThan(0);
     });
 
     test("inet_server_port() returns port number", async () => {
@@ -47,10 +50,13 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
 
     test("inet_client_addr() returns IP address", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT inet_client_addr()::text as addr");
-      const addr = (rows[0] as { addr: string }).addr;
+      const addr = (rows[0] as { addr: string | null }).addr;
       // Might be null if via unix socket, or IP string
-      if (addr) {
-        expect(addr).toMatch(/^[0-9a-f:./]+$/);
+      if (addr !== null) {
+        // Strip CIDR suffix if present and validate with net.isIP()
+        const ipOnly = addr.split("/")[0];
+        const ipVersion = net.isIP(ipOnly);
+        expect(ipVersion).toBeGreaterThan(0);
       } else {
         expect(addr).toBeNull();
       }
@@ -62,20 +68,20 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
    * @kb-section PostgreSQL UUID Generation
    */
   describe("UUID Generation (MAC alternative)", () => {
-    test("gen_random_uuid() availability (PG 13+)", async () => {
+    test("gen_random_uuid() availability (PG 13+)", async (context) => {
       // Check version first
       const { rows } = await directSQLExpectSuccess(
         "SELECT current_setting('server_version_num')::int as ver"
       );
       const ver = (rows[0] as { ver: number }).ver;
 
-      if (ver >= 130000) {
-        const { success } = await directSQL("SELECT gen_random_uuid()");
-        expect(success).toBe(true);
-      } else {
-        // Skip for older versions
-        expect(true).toBe(true);
+      if (ver < 130000) {
+        context.skip();
+        return;
       }
+
+      const { success } = await directSQL("SELECT gen_random_uuid()");
+      expect(success).toBe(true);
     });
 
     test("uuid-ossp extension check", async () => {

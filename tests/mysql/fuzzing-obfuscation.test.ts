@@ -403,9 +403,28 @@ describe("MySQL Fuzzing and Obfuscation", () => {
       expect(rows.length).toBeGreaterThan(0);
     });
 
-    test("Table names are case-sensitive on Linux", async () => {
-      // On Linux, 'users' != 'USERS' != 'Users'
-      // This test verifies the case-sensitive behavior
+    test("Table names are case-sensitive (platform/config dependent)", async (context) => {
+      // Table name case sensitivity depends on:
+      // - Filesystem: Linux = case-sensitive, Windows/macOS = case-insensitive
+      // - MySQL setting: lower_case_table_names (0 = case-sensitive, 1/2 = insensitive)
+      // Check the MySQL server setting to determine expected behavior
+      const settingResult = await mysqlDirectSQL("SELECT @@lower_case_table_names AS setting");
+      if (!settingResult.success) {
+        context.skip();
+        return;
+      }
+      const lowerCaseTableNames = (settingResult.result?.rows[0] as { setting: number }).setting;
+
+      // Skip test if tables are case-insensitive (setting 1 or 2)
+      if (lowerCaseTableNames !== 0) {
+        console.log(
+          `Skipping: lower_case_table_names=${lowerCaseTableNames} (tables are case-insensitive)`
+        );
+        context.skip();
+        return;
+      }
+
+      // On case-sensitive systems, 'users' != 'USERS' != 'Users'
       const result = await mysqlDirectSQL("SELECT * FROM USERS WHERE id = 1");
       // Will fail because table was created as lowercase 'users'
       expect(result.success).toBe(false);
@@ -1041,12 +1060,12 @@ describe("MySQL Fuzzing and Obfuscation", () => {
  */
 describe("MySQL Whitespace via HTTP Layer", () => {
   let server: Awaited<ReturnType<typeof startServer>> | undefined;
-  const port = 3002;
+  let port: number;
 
   beforeAll(async () => {
     logger.setLevel("warn");
     server = await startServer({
-      port,
+      port: 0, // Let OS assign an available port
       dbType: "mysql",
       dbHost: process.env.MYSQL_HOST ?? "localhost",
       dbPort: parseInt(process.env.MYSQL_PORT ?? "3306", 10),
@@ -1054,6 +1073,13 @@ describe("MySQL Whitespace via HTTP Layer", () => {
       dbPassword: process.env.MYSQL_PASSWORD ?? "testpass",
       dbName: process.env.MYSQL_DATABASE ?? "vulndb",
     });
+    // Get the actual port assigned by the OS
+    const addr = server.server.address();
+    if (addr && typeof addr === "object") {
+      port = addr.port;
+    } else {
+      throw new Error("Failed to get server address");
+    }
   }, 30000);
 
   afterAll(async () => {

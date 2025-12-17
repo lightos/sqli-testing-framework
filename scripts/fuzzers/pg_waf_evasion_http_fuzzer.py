@@ -4,10 +4,61 @@ PostgreSQL WAF Evasion HTTP Fuzzer
 Tests interesting obfuscation techniques through vulnerable web app.
 """
 
+import os
 import requests
 import sys
 
 BASE_URL = "http://localhost:3000"
+
+
+def validate_outfile(path: str, force: bool = False) -> str:
+    """Validate output file path for safety.
+
+    Args:
+        path: The output file path to validate
+        force: If True, allow overwriting existing files
+
+    Returns:
+        The validated path
+
+    Raises:
+        SystemExit: If validation fails
+    """
+    # Reject absolute paths
+    if os.path.isabs(path):
+        print(f"ERROR: Absolute paths not allowed: {path}", file=sys.stderr)
+        print("Use a relative path under the current directory.", file=sys.stderr)
+        sys.exit(1)
+
+    # Reject parent traversal
+    if ".." in path.split(os.sep):
+        print(f"ERROR: Parent traversal not allowed: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Normalize and verify it stays under cwd
+    normalized = os.path.normpath(path)
+    abs_path = os.path.abspath(normalized)
+    cwd = os.getcwd()
+    if not abs_path.startswith(cwd + os.sep) and abs_path != cwd:
+        # Allow files directly in cwd
+        if os.path.dirname(abs_path) != cwd:
+            print(f"ERROR: Path escapes current directory: {path}", file=sys.stderr)
+            sys.exit(1)
+
+    # Check if target directory exists
+    target_dir = os.path.dirname(normalized) or "."
+    if not os.path.isdir(target_dir):
+        print(f"ERROR: Directory does not exist: {target_dir}", file=sys.stderr)
+        print("Create the directory first or use a different path.", file=sys.stderr)
+        sys.exit(1)
+
+    # Prevent accidental overwrites without --force
+    if os.path.exists(normalized) and not force:
+        print(f"ERROR: File already exists: {normalized}", file=sys.stderr)
+        print("Use --force to overwrite, or specify a different filename.", file=sys.stderr)
+        sys.exit(1)
+
+    return normalized
 
 def test_payload(endpoint, param, payload, desc=None):
     """Test a payload and return result.
@@ -17,27 +68,42 @@ def test_payload(endpoint, param, payload, desc=None):
         param: Parameter name to inject into
         payload: The SQL injection payload
         desc: Optional description for logging/debugging
+
+    Returns:
+        dict with keys: success, desc, and either count/data or error
     """
+    result_base = {"desc": desc}
     try:
         if endpoint == "/users":
             r = requests.get(f"{BASE_URL}{endpoint}", params={param: payload}, timeout=5)
         else:
             r = requests.post(f"{BASE_URL}{endpoint}", json={param: payload}, timeout=5)
 
-        data = r.json()
+        try:
+            data = r.json()
+        except ValueError:
+            return {**result_base, "success": False, "error": f"Invalid JSON response: {r.text[:50]}"}
+
         # Check if injection worked (got more than expected or specific data)
         if "users" in data:
-            return {"success": True, "count": len(data["users"]), "data": data}
+            return {**result_base, "success": True, "count": len(data["users"]), "data": data}
         elif "error" in data:
-            return {"success": False, "error": data["error"][:50]}
+            return {**result_base, "success": False, "error": data["error"][:50]}
         else:
-            return {"success": True, "data": data}
+            return {**result_base, "success": True, "data": data}
     except Exception as e:
-        return {"success": False, "error": str(e)[:50]}
+        return {**result_base, "success": False, "error": str(e)[:50]}
 
 
 def main():
-    outfile = sys.argv[1] if len(sys.argv) > 1 else "pg_waf_evasion_http_results.txt"
+    # Parse arguments
+    args = sys.argv[1:]
+    force = "--force" in args
+    if force:
+        args.remove("--force")
+
+    outfile_arg = args[0] if args else "pg_waf_evasion_http_results.txt"
+    outfile = validate_outfile(outfile_arg, force=force)
 
     print("PostgreSQL WAF Evasion HTTP Fuzzer")
     print(f"Target: {BASE_URL}")
@@ -321,13 +387,26 @@ def main():
         results.append(f"- {status} {desc}")
 
     # Write results
-    with open(outfile, 'w') as f:
-        f.write('\n'.join(results))
+    output_content = '\n'.join(results)
+    write_failed = False
+    try:
+        with open(outfile, 'w', encoding='utf-8') as f:
+            f.write(output_content)
+            f.flush()
+            os.fsync(f.fileno())
+    except (IOError, OSError) as e:
+        write_failed = True
+        print(f"\nERROR: Failed to write to {outfile}: {e}", file=sys.stderr)
+        print("Outputting results to stderr instead:\n", file=sys.stderr)
+        print(output_content, file=sys.stderr)
 
     print(f"\n{'='*60}")
-    print(f"Results written to: {outfile}")
+    if write_failed:
+        print("Results output to stderr (file write failed)")
+    else:
+        print(f"Results written to: {outfile}")
     print(f"{'='*60}")
-    return 0
+    return 1 if write_failed else 0
 
 
 if __name__ == "__main__":

@@ -2,15 +2,28 @@
 """
 PostgreSQL Triple Whitespace Character Fuzzer
 Tests 3-byte combinations. Optimized to find unexpected results.
+
+Usage: python pg_whitespace_triple_fuzzer.py [port] [--verbose]
 """
 
 import sys
 from itertools import product
+import psycopg2
 from fuzzer_utils import get_pg_connection
 
 
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
+
+
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    port = int(args[0]) if args else 5432
 
     conn = None
     cur = None
@@ -21,6 +34,8 @@ def main():
         cur.execute("SELECT version()")
         version = cur.fetchone()[0].split(',')[0]
         print(f"PostgreSQL: {version}")
+        if verbose:
+            print("Verbose mode enabled - exceptions will be logged")
 
         # Known single whitespace chars
         single_ws = {0x09, 0x0A, 0x0C, 0x0D, 0x20}
@@ -35,8 +50,10 @@ def main():
                 cur.execute(query)
                 if len(cur.fetchall()) == 2:
                     known_valid += 1
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except psycopg2.Error as e:
+                log_debug(verbose, f"Phase1 {combo}: {type(e).__name__}: {e}")
         print(f"  Known whitespace combos that work: {known_valid}/125")
 
         # Phase 2: Test combos with at least one non-whitespace byte
@@ -62,8 +79,10 @@ def main():
                 cur.execute(query)
                 if len(cur.fetchall()) == 2:
                     unexpected.add(combo)
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                raise
+            except psycopg2.Error as e:
+                log_debug(verbose, f"Phase2 {combo}: {type(e).__name__}: {e}")
 
             if tested % 10000 == 0:
                 print(f"    ...tested {tested}, found {len(unexpected)} unexpected", file=sys.stderr)
@@ -81,8 +100,10 @@ def main():
                         cur.execute(query)
                         if len(cur.fetchall()) == 2:
                             unexpected.add((ws1, ws2, b))
-                    except Exception:
-                        pass
+                    except KeyboardInterrupt:
+                        raise
+                    except psycopg2.Error as e:
+                        log_debug(verbose, f"Phase3 ({ws1:02X},{ws2:02X},{b:02X}): {type(e).__name__}: {e}")
 
         print("\nPhase 4: Testing [known_ws][0x00-0xFF][known_ws]...")
         for ws1 in single_ws:
@@ -96,8 +117,10 @@ def main():
                         cur.execute(query)
                         if len(cur.fetchall()) == 2:
                             unexpected.add((ws1, b, ws2))
-                    except Exception:
-                        pass
+                    except KeyboardInterrupt:
+                        raise
+                    except psycopg2.Error as e:
+                        log_debug(verbose, f"Phase4 ({ws1:02X},{b:02X},{ws2:02X}): {type(e).__name__}: {e}")
 
         print("\nPhase 5: Testing [0x00-0xFF][known_ws][known_ws]...")
         for b in range(256):
@@ -111,8 +134,10 @@ def main():
                         cur.execute(query)
                         if len(cur.fetchall()) == 2:
                             unexpected.add((b, ws1, ws2))
-                    except Exception:
-                        pass
+                    except KeyboardInterrupt:
+                        raise
+                    except psycopg2.Error as e:
+                        log_debug(verbose, f"Phase5 ({b:02X},{ws1:02X},{ws2:02X}): {type(e).__name__}: {e}")
     finally:
         if cur:
             cur.close()

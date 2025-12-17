@@ -406,7 +406,8 @@ describe("PostgreSQL-specific Code", () => {
       const { rows } = await directSQLExpectSuccess(
         "SELECT EXISTS(SELECT 1 FROM users WHERE substr(username, 1, 1) = chr(n)) as found FROM generate_series(97, 122) AS n WHERE EXISTS(SELECT 1 FROM users WHERE substr(username, 1, 1) = chr(n)) LIMIT 1"
       );
-      expect(rows.length).toBeGreaterThanOrEqual(0);
+      // Should find at least one match since 'admin' starts with 'a' (chr(97))
+      expect(rows.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -454,10 +455,12 @@ describe("PostgreSQL-specific Code", () => {
     });
 
     test("lo_import imports file (requires privileges)", async () => {
-      const { success, error } = await directSQL("SELECT lo_import('/etc/passwd')");
+      const { success, result, error } = await directSQL("SELECT lo_import('/etc/passwd') as oid");
       // Either succeeds (has privileges) or fails with expected permission error
-      if (success) {
-        expect(error).toBeUndefined();
+      if (success && result) {
+        // Clean up the created large object
+        const oid = (result.rows[0] as { oid: number }).oid;
+        await directSQL(`SELECT lo_unlink(${oid})`);
       } else {
         expect(error?.message).toMatch(/permission denied|could not open/i);
       }
@@ -693,7 +696,6 @@ describe("PostgreSQL-specific Code", () => {
       const { success } = await directSQL("COPY (SELECT 1, 'test') TO STDOUT");
       expect(success).toBe(true);
     });
-
     test("COPY FROM STDIN syntax check", async () => {
       // COPY FROM STDIN requires INSERT privilege only, not file access
       // We can't send stdin data through this test framework, but we can verify
@@ -704,7 +706,7 @@ describe("PostgreSQL-specific Code", () => {
         // Either succeeds (waiting for data) or fails with stdin-related error
         if (!success) {
           // Should fail because no stdin data, not because of syntax
-          expect(error?.message).toMatch(/stdin|COPY|data/i);
+          expect(error?.message).toMatch(/stdin|no data|unexpected EOF|end of input/i);
         }
       } finally {
         await directSQL("DROP TABLE IF EXISTS copy_test");
@@ -730,15 +732,16 @@ describe("PostgreSQL-specific Code", () => {
    */
   describe("Version-specific features", () => {
     test("pg_read_binary_file available (9.1+)", async () => {
-      const { success, error } = await directSQL(
+      const { success, result, error } = await directSQL(
         "SELECT pg_read_binary_file('/etc/passwd') as content"
       );
       if (!success) {
         // Function exists but permission denied
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
       } else {
-        // Superuser context - function succeeded
-        expect(success).toBe(true);
+        // Superuser context - verify content was returned
+        const content = (result?.rows[0] as { content: Buffer }).content;
+        expect(content.length).toBeGreaterThan(0);
       }
     });
 

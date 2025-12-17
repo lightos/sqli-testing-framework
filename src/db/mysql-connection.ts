@@ -9,8 +9,8 @@ export interface MySQLConnectionConfig {
   database: string;
 }
 
-export interface MySQLQueryResult {
-  rows: Record<string, unknown>[];
+export interface MySQLQueryResult<T extends Record<string, unknown> = Record<string, unknown>> {
+  rows: T[];
   rowCount: number;
   affectedRows: number;
   insertId?: number;
@@ -91,7 +91,9 @@ export class MySQLConnectionManager {
   /**
    * Execute a SQL query using the connection pool
    */
-  async query(sql: string): Promise<MySQLQueryResult> {
+  async query<T extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string
+  ): Promise<MySQLQueryResult<T>> {
     if (!this.pool) {
       throw new Error("MySQL connection pool not initialized. Call connect() first.");
     }
@@ -101,7 +103,7 @@ export class MySQLConnectionManager {
     // Handle SELECT queries (returns array of rows)
     if (Array.isArray(rows)) {
       return {
-        rows: rows as Record<string, unknown>[],
+        rows: rows as T[],
         rowCount: rows.length,
         affectedRows: 0,
       };
@@ -142,9 +144,11 @@ export class MySQLConnectionManager {
    * Get MySQL version information
    */
   async getVersion(): Promise<string> {
-    const result = await this.query("SELECT VERSION() as version");
-    const versionRow = result.rows[0] as { version: string } | undefined;
-    return versionRow?.version ?? "unknown";
+    const result = await this.query<{ version: string }>("SELECT VERSION() as version");
+    if (result.rows.length === 0) {
+      return "unknown";
+    }
+    return result.rows[0].version;
   }
 
   /**

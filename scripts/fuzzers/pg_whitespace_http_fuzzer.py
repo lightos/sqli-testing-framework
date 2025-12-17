@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
+def main() -> int:
     args = parse_args()
     base_url = args.base_url
     outfile = args.outfile
@@ -220,7 +220,7 @@ def main():
     try:
         with open(outfile, "w", encoding="utf-8") as f:
             f.write("\n".join(results))
-    except (IOError, OSError) as e:
+    except OSError as e:
         print(f"ERROR: Failed to write results to {outfile}: {e}", file=sys.stderr)
         # Attempt to save partial results to fallback file
         fallback = outfile + ".partial"
@@ -228,7 +228,7 @@ def main():
             with open(fallback, "w", encoding="utf-8") as f:
                 f.write("\n".join(results))
             print(f"Partial results saved to: {fallback}", file=sys.stderr)
-        except (IOError, OSError) as e2:
+        except OSError as e2:
             print(
                 f"ERROR: Failed to write fallback file {fallback}: {e2}",
                 file=sys.stderr,

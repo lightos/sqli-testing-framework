@@ -2,33 +2,47 @@
 """
 PostgreSQL 4-byte Whitespace Fuzzer
 Tests 4-byte combinations (0x00-0x7F charset)
-
-Usage: python pg_whitespace_quad_fuzzer.py [port] [outfile] [--verbose]
 """
 
+import argparse
 import sys
 from itertools import product
+
 from fuzzer_utils import get_pg_connection, log_debug
 
 
-def main():
-    # Parse arguments
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL 4-byte Whitespace Fuzzer - Tests 4-byte combinations (0x00-0x7F charset)"
+    )
+    parser.add_argument(
+        "port",
+        nargs="?",
+        type=int,
+        default=5432,
+        help="PostgreSQL port (default: 5432)",
+    )
+    parser.add_argument(
+        "outfile",
+        nargs="?",
+        default="pg_quad_results.txt",
+        help="Output file for results (default: pg_quad_results.txt)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output - log exceptions to stderr",
+    )
+    return parser.parse_args()
 
-    # Parse port with error handling
-    if args:
-        try:
-            port = int(args[0])
-        except ValueError:
-            print(
-                f"ERROR: Invalid port '{args[0]}' - must be a valid integer",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-    else:
-        port = 5432
-    outfile = args[1] if len(args) > 1 else "pg_quad_results.txt"
+
+def main() -> int:
+    args = parse_args()
+    port = args.port
+    outfile = args.outfile
+    verbose = args.verbose
 
     conn = None
     cur = None
@@ -275,8 +289,10 @@ def main():
             print(f"Partial results saved to: {partial_file}", file=sys.stderr)
         except OSError as e2:
             print(f"Failed to save partial results: {e2}", file=sys.stderr)
-        sys.exit(1)
+        return 1
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

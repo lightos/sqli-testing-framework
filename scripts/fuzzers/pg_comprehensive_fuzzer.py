@@ -14,7 +14,7 @@ import psycopg2
 
 
 class PgFuzzer:
-    def __init__(self, default_port=5432):
+    def __init__(self, default_port=5432) -> None:
         host = os.environ.get("PGHOST", "localhost")
         port = int(os.environ.get("PGPORT", default_port))
         user = os.environ.get("PGUSER", "postgres")

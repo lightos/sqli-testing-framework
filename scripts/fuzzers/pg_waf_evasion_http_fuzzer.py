@@ -102,9 +102,10 @@ def test_payload(endpoint, param, payload, desc=None):
                 "count": len(data["users"]),
                 "data": data,
             }
-        if "error" in data:
+        elif "error" in data:
             return {**result_base, "success": False, "error": data["error"][:50]}
-        return {**result_base, "success": True, "data": data}
+        else:
+            return {**result_base, "success": True, "data": data}
     except requests.RequestException as e:
         return {**result_base, "success": False, "error": str(e)[:50]}
 
@@ -126,7 +127,14 @@ def main():
     # Verify app is running
     try:
         r = requests.get(f"{BASE_URL}/users?id=1", timeout=5)
-        baseline = r.json()
+        if r.status_code != 200:
+            print(f"ERROR: App returned status {r.status_code}")
+            sys.exit(1)
+        try:
+            baseline = r.json()
+        except ValueError:
+            print(f"ERROR: Invalid JSON response: {r.text[:100]}")
+            sys.exit(1)
         print(f"\nBaseline: {baseline}\n")
     except requests.RequestException as e:
         print(f"ERROR: App not running? {e}")

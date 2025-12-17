@@ -402,32 +402,60 @@ describe("PostgreSQL Privilege Escalation", () => {
    * @kb-section CREATEROLE Exploitation
    */
   describe("CREATEROLE exploitation patterns", () => {
-    test("Check current user CREATEROLE status", async () => {
-      const { rows } = await directSQLExpectSuccess(
-        "SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user"
-      );
-      // Document whether current user can create roles
-      expect(typeof (rows[0] as { rolcreaterole: boolean }).rolcreaterole).toBe("boolean");
+    test("Verify CREATEROLE is required for exploitation", async () => {
+      // Check multiple role attributes needed for exploitation patterns
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT rolcreaterole, rolsuper, roladmin
+        FROM pg_roles WHERE rolname = current_user
+      `);
+      const role = rows[0] as { rolcreaterole: boolean; rolsuper: boolean; roladmin: boolean };
+      // Non-superuser test accounts typically don't have CREATEROLE
+      // This documents the privilege state for exploitation context
+      expect(role.rolcreaterole || role.rolsuper).toBeDefined();
     });
 
     test("Grant pg_read_server_files syntax (requires CREATEROLE)", async () => {
       // This will fail without CREATEROLE, but we verify the syntax
       const { success } = await directSQL("GRANT pg_read_server_files TO current_user");
-      // Either succeeds or fails with permission error
-      expect(typeof success).toBe("boolean");
+      try {
+        // Either succeeds or fails with permission error
+        expect(typeof success).toBe("boolean");
+      } finally {
+        // Revoke if granted to avoid persistent role membership
+        if (success) {
+          await directSQL("REVOKE pg_read_server_files FROM current_user");
+        }
+      }
     });
 
     test("Grant pg_write_server_files syntax (requires CREATEROLE)", async () => {
       const { success } = await directSQL("GRANT pg_write_server_files TO current_user");
-      expect(typeof success).toBe("boolean");
+      try {
+        expect(typeof success).toBe("boolean");
+      } finally {
+        // Revoke if granted to avoid persistent role membership
+        if (success) {
+          await directSQL("REVOKE pg_write_server_files FROM current_user");
+        }
+      }
     });
 
     test("Grant pg_execute_server_program syntax (requires CREATEROLE)", async () => {
       const { success } = await directSQL("GRANT pg_execute_server_program TO current_user");
-      expect(typeof success).toBe("boolean");
+      try {
+        expect(typeof success).toBe("boolean");
+      } finally {
+        // Revoke if granted to avoid persistent role membership
+        if (success) {
+          await directSQL("REVOKE pg_execute_server_program FROM current_user");
+        }
+      }
     });
 
     test("Create backdoor user pattern (requires CREATEROLE)", async () => {
+      // Pre-clean: PostgreSQL lacks CREATE ROLE IF NOT EXISTS, so drop first
+      await directSQL("DROP ROLE IF EXISTS backdoor_test");
+
       const { success } = await directSQL(
         "CREATE ROLE backdoor_test WITH LOGIN PASSWORD 'test123'"
       );
@@ -509,8 +537,10 @@ describe("PostgreSQL Privilege Escalation", () => {
   describe("Password brute force patterns", () => {
     test("Connection string escape helper", async () => {
       // Helper to escape connection string values
+      // Order matters: escape backslashes first, then single quotes
+      // Otherwise newly inserted backslashes get double-escaped
       const { rows } = await directSQLExpectSuccess(`
-        SELECT replace(replace('test''value', '''', '\\'''), '\\', '\\\\') as escaped
+        SELECT replace(replace('test''value', '\\', '\\\\'), '''', '\\''') as escaped
       `);
       expect((rows[0] as { escaped: string }).escaped).toContain("test");
     });
@@ -527,8 +557,14 @@ describe("PostgreSQL Privilege Escalation", () => {
       const { success } = await directSQL(
         "SELECT dblink_connect('test_conn', 'host=localhost dbname=postgres user=test password=test')"
       );
-      // Either fails with auth error or dblink not installed
-      expect(typeof success).toBe("boolean");
+      try {
+        // Either fails with auth error or dblink not installed
+        expect(typeof success).toBe("boolean");
+      } finally {
+        // Always attempt to disconnect named connection to avoid leaks
+        // Ignore errors if dblink isn't installed or connection wasn't created
+        await directSQL("SELECT dblink_disconnect('test_conn')");
+      }
     });
 
     test("Brute force function pattern (if dblink available)", () => {

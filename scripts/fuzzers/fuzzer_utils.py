@@ -49,7 +49,12 @@ def get_pg_connection(port=None):
 
     # Port precedence: parameter > PGPORT env > 5432 default
     if port is not None:
-        db_port = int(port)
+        try:
+            db_port = int(port)
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid port parameter: '{port}' is not a valid port number"
+            ) from e
     elif "PGPORT" in os.environ:
         try:
             db_port = int(os.environ["PGPORT"])

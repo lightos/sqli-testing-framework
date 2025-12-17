@@ -515,7 +515,8 @@ describe("MySQL Fuzzing and Obfuscation", () => {
     test("NULL-safe equal with NULL comparison", async () => {
       // <=> returns 1 when comparing NULL to NULL (unlike = which returns NULL)
       const { rows } = await mysqlDirectSQLExpectSuccess("SELECT NULL <=> NULL AS result");
-      expect(rows[0].result).toBe(1);
+      const value = rows[0].result ?? rows[0].RESULT;
+      expect(value).toBe(1);
     });
 
     test("OR with string comparison", async () => {

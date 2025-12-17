@@ -83,11 +83,12 @@ export async function mysqlDirectSQLExpectError(sql: string): Promise<Error> {
 
 /**
  * Test timing-based injection directly.
+ * Validates timing >= (expectedDelayMs - toleranceMs) and optionally <= (maxExpectedMs + toleranceMs).
  *
  * @param sql - SQL query to execute
  * @param expectedDelayMs - Expected delay in milliseconds
- * @param toleranceMs - Tolerance for lower bound check (default 200ms)
- * @param maxExpectedMs - Optional upper bound; if provided, validates timing <= maxExpectedMs
+ * @param toleranceMs - Tolerance applied symmetrically to both bounds (default 200ms)
+ * @param maxExpectedMs - Optional upper bound; if provided, validates timing <= maxExpectedMs + toleranceMs
  */
 export async function mysqlDirectTimingTest(
   sql: string,

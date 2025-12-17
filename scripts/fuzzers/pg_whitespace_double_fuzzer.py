@@ -7,6 +7,9 @@ Usage: python pg_whitespace_double_fuzzer.py [port] [--verbose]
 """
 
 import sys
+
+import psycopg2
+
 from fuzzer_utils import get_pg_connection, log_debug
 
 
@@ -62,7 +65,7 @@ def main():
                         valid.append((i, j, both_known))
                 except KeyboardInterrupt:
                     raise
-                except Exception as e:
+                except psycopg2.Error as e:
                     # Expected: most combinations will fail with syntax errors
                     log_debug(verbose, f"0x{i:02X}{j:02X}: {type(e).__name__}: {e}")
 

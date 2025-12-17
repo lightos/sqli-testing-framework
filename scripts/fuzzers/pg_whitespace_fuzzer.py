@@ -7,6 +7,9 @@ Usage: python pg_whitespace_fuzzer.py [port] [--verbose]
 """
 
 import sys
+
+import psycopg2
+
 from fuzzer_utils import (
     get_pg_connection,
     get_char_description,
@@ -60,7 +63,7 @@ def main():
                     valid_whitespace.append(i)
             except KeyboardInterrupt:
                 raise
-            except Exception as e:
+            except psycopg2.Error as e:
                 log_debug(verbose, f"0x{i:04X} UNION test: {type(e).__name__}: {e}")
 
             # Test 2: Works after SELECT before column (includes unary operators)
@@ -73,7 +76,7 @@ def main():
                         valid_after_select.append(i)
             except KeyboardInterrupt:
                 raise
-            except Exception as e:
+            except psycopg2.Error as e:
                 log_debug(verbose, f"0x{i:04X} SELECT test: {type(e).__name__}: {e}")
 
             if i % 5000 == 0 and i > 0:

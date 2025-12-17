@@ -99,9 +99,10 @@ if ($result === false) {
         echo "  Error: $error\n";
         $passed++;
     } else {
-        echo "  PASS: pg_query_params() rejected multi-statements (different error)\n";
-        echo "  Error: $error\n";
-        $passed++;
+        echo "  WARN: pg_query_params() rejected multi-statements but with unexpected error\n";
+        echo "  Expected: 'cannot insert multiple commands'\n";
+        echo "  Got: $error\n";
+        $failed++;
     }
 } else {
     echo "  FAIL: pg_query_params() unexpectedly allowed multi-statements!\n";

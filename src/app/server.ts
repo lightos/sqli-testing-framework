@@ -28,6 +28,8 @@ interface AppConfig {
 
 interface QueryResult {
   rows: Record<string, unknown>[];
+  affectedRows?: number;
+  insertId?: number;
 }
 
 /**
@@ -84,8 +86,18 @@ class MySQLAdapter implements DatabaseAdapter {
   }
 
   async query(sql: string): Promise<QueryResult> {
-    const [rows] = await this.pool.query<mysql.RowDataPacket[]>(sql);
-    return { rows: rows as Record<string, unknown>[] };
+    const [result] = await this.pool.query(sql);
+    // mysql2 returns RowDataPacket[] for SELECT, ResultSetHeader for INSERT/UPDATE/DELETE
+    if (Array.isArray(result)) {
+      return { rows: result as Record<string, unknown>[] };
+    }
+    // ResultSetHeader for non-SELECT statements
+    const header = result as mysql.ResultSetHeader;
+    return {
+      rows: [],
+      affectedRows: header.affectedRows,
+      insertId: header.insertId,
+    };
   }
 
   async close(): Promise<void> {
@@ -305,6 +317,7 @@ function getDbEnv(
 
 /**
  * Get environment variable as integer based on database type with fallback default.
+ * Logs a warning if the environment variable contains an invalid integer value.
  */
 function getDbEnvInt(
   mysqlKey: string,
@@ -316,7 +329,13 @@ function getDbEnvInt(
   const value = process.env[envKey];
   if (value === undefined) return defaultValue;
   const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? defaultValue : parsed;
+  if (Number.isNaN(parsed)) {
+    logger.warn(
+      `Invalid integer value for environment variable ${envKey}: "${value}" (dbType: ${dbType}). Using default: ${defaultValue}`
+    );
+    return defaultValue;
+  }
+  return parsed;
 }
 
 /**

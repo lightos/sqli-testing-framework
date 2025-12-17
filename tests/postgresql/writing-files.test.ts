@@ -331,20 +331,37 @@ describe("PostgreSQL Writing Files", () => {
       expect(true).toBe(true);
     });
 
-    test("lo_from_bytea with nested lo_export (single statement)", async () => {
-      // Single-statement pattern preferred for injection
-      const { success } = await directSQL(
-        "SELECT lo_export(lo_from_bytea(0, 'single statement write'::bytea), '/tmp/single_stmt_test.txt')"
+    test("lo_from_bytea with lo_export (separate statements for cleanup)", async () => {
+      // Create large object first to capture OID for cleanup
+      const { success: createSuccess, result: createResult } = await directSQL(
+        "SELECT lo_from_bytea(0, 'single statement write'::bytea) as oid"
       );
-      // May fail with permission denied, large object error, or succeed
-      // All are valid outcomes depending on privileges and transaction handling
-      expect(typeof success).toBe("boolean");
+
+      if (!createSuccess || !createResult) {
+        // Creation failed - likely permission denied
+        expect(typeof createSuccess).toBe("boolean");
+        return;
+      }
+
+      const oid = (createResult.rows[0] as { oid: number }).oid;
+
+      try {
+        // Attempt export
+        const { success: exportSuccess } = await directSQL(
+          `SELECT lo_export(${oid}, '/tmp/single_stmt_test.txt')`
+        );
+        // May fail with permission denied or succeed
+        expect(typeof exportSuccess).toBe("boolean");
+      } finally {
+        // Clean up the large object
+        await directSQL(`SELECT lo_unlink(${oid})`);
+      }
     });
 
     test("lowrite() with file descriptor (traditional API)", async () => {
       // Traditional lo_open/lowrite/lo_close pattern
       const { success } = await directSQL(`
-        DO $
+        DO $$
         DECLARE
           oid_var oid;
           fd integer;
@@ -355,7 +372,7 @@ describe("PostgreSQL Writing Files", () => {
           PERFORM lo_close(fd);
           -- In real scenario: lo_export here
           PERFORM lo_unlink(oid_var);
-        END $
+        END $$
       `);
       // May fail with permission denied on restricted setups
       expect(typeof success).toBe("boolean");

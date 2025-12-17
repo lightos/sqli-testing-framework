@@ -8,6 +8,7 @@
  * the technique works when permitted, and handle permission errors gracefully.
  */
 
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +18,7 @@ import {
   cleanupDirectRunner,
   directSQL,
   directSQLExpectSuccess,
+  directSQLParameterized,
 } from "../../src/runner/direct.js";
 import { logger } from "../../src/utils/logger.js";
 
@@ -25,9 +27,9 @@ import { logger } from "../../src/utils/logger.js";
  * Logs a warning if cleanup fails.
  */
 async function cleanupLargeObject(oid: number): Promise<void> {
-  const { success, error } = await directSQL(`SELECT lo_unlink(${oid})`);
+  const { success, error } = await directSQLParameterized("SELECT lo_unlink($1)", [oid]);
   if (!success) {
-    console.warn(`Failed to cleanup large object ${oid}: ${error?.message}`);
+    logger.warn(`Failed to cleanup large object ${oid}: ${error?.message}`);
   }
 }
 
@@ -334,8 +336,9 @@ describe("PostgreSQL Reading Files", () => {
     });
 
     test("lo_export to retrieve via pg_read_file", async () => {
-      // Generate unique temp filename to avoid conflicts in parallel runs
-      const tempFile = path.join(os.tmpdir(), `lo_export_test_${process.pid}_${Date.now()}.txt`);
+      // Generate unique temp filename with cryptographically-strong random suffix
+      const randomSuffix = randomBytes(16).toString("hex");
+      const tempFile = path.join(os.tmpdir(), `lo_export_test_${randomSuffix}.txt`);
 
       // Create LO
       const { rows: createRows } = await directSQLExpectSuccess(
@@ -357,8 +360,11 @@ describe("PostgreSQL Reading Files", () => {
         // Clean up exported file if it exists
         try {
           await fs.promises.unlink(tempFile);
-        } catch {
-          // File may not exist if export failed - ignore
+        } catch (err) {
+          // Only ignore ENOENT (file not found) - surface other errors
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.error(`Failed to cleanup temp file ${tempFile}:`, err);
+          }
         }
       }
     });

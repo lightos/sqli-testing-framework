@@ -22,6 +22,9 @@ CREATE TABLE products (
 );
 
 -- Logs table - for stacked query tests
+-- Note: user_id intentionally lacks a foreign key constraint to allow
+-- stacked query injection tests to insert arbitrary log entries without
+-- requiring a valid user reference (e.g., INSERT INTO logs ... via injection)
 CREATE TABLE logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     action TEXT NOT NULL,

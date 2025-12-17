@@ -274,6 +274,32 @@ describe("PostgreSQL Injection Detection", () => {
 
   /**
    * @kb-entry postgresql/testing-injection
+   * @kb-section Numeric Injection Tests
+   */
+  describe("Numeric injection with boolean arithmetic", () => {
+    test("1 - false without cast fails in PostgreSQL", async () => {
+      const error = await directSQLExpectError("SELECT 1 - false");
+      expect(error.message).toMatch(/operator does not exist.*integer.*boolean/i);
+    });
+
+    test("1 - true without cast fails in PostgreSQL", async () => {
+      const error = await directSQLExpectError("SELECT 1 - true");
+      expect(error.message).toMatch(/operator does not exist.*integer.*boolean/i);
+    });
+
+    test("1 - false::int returns 1 (false = 0)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 1 - false::int as result");
+      expect((rows[0] as { result: number }).result).toBe(1);
+    });
+
+    test("1 - true::int returns 0 (true = 1)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 1 - true::int as result");
+      expect((rows[0] as { result: number }).result).toBe(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/testing-injection
    * @kb-section PostgreSQL Cast Syntax
    */
   describe("PostgreSQL-specific cast syntax (::type)", () => {

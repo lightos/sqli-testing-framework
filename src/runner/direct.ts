@@ -46,6 +46,20 @@ export async function directSQL(sql: string): Promise<SQLExecutionResult> {
 }
 
 /**
+ * Execute parameterized SQL directly against the database
+ */
+export async function directSQLParameterized(
+  sql: string,
+  params: unknown[]
+): Promise<SQLExecutionResult> {
+  if (!adapter) {
+    throw new Error("Direct runner not initialized. Call initDirectRunner() first.");
+  }
+
+  return adapter.executeParameterized(sql, params);
+}
+
+/**
  * Execute SQL expecting it to succeed
  */
 export async function directSQLExpectSuccess(
@@ -71,18 +85,24 @@ export async function directSQLExpectError(sql: string): Promise<Error> {
 }
 
 /**
- * Test timing-based injection directly
+ * Test timing-based injection directly.
+ *
+ * @param sql - SQL query to execute
+ * @param expectedDelayMs - Expected delay in milliseconds
+ * @param toleranceMs - Tolerance for lower bound check (default 200ms)
+ * @param maxExpectedMs - Optional upper bound; if provided, validates timing <= maxExpectedMs
  */
 export async function directTimingTest(
   sql: string,
   expectedDelayMs: number,
-  toleranceMs = 200
+  toleranceMs = 200,
+  maxExpectedMs?: number
 ): Promise<boolean> {
   if (!adapter) {
     throw new Error("Direct runner not initialized. Call initDirectRunner() first.");
   }
 
-  return adapter.testTimingInjection(sql, expectedDelayMs, toleranceMs);
+  return adapter.testTimingInjection(sql, expectedDelayMs, toleranceMs, maxExpectedMs);
 }
 
 /**

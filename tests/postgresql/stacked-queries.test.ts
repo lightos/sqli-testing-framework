@@ -10,7 +10,12 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { initDirectRunner, cleanupDirectRunner, directSQL } from "../../src/runner/direct.js";
+import {
+  initDirectRunner,
+  cleanupDirectRunner,
+  directSQL,
+  directSQLParameterized,
+} from "../../src/runner/direct.js";
 import { logger } from "../../src/utils/logger.js";
 
 describe("PostgreSQL Stacked Queries", () => {
@@ -302,6 +307,43 @@ describe("PostgreSQL Stacked Queries", () => {
       expect(columns).toContain("username");
       expect(columns).toContain("password");
       expect(columns).toContain("role");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/stacked-queries
+   * @kb-section Driver Support - Parameterized Queries
+   *
+   * Tests that parameterized queries do NOT support multi-statements.
+   * This is a PostgreSQL protocol limitation, not driver-specific.
+   */
+  describe("Parameterized query multi-statement limitations", () => {
+    test("Parameterized multi-statement fails with protocol error", async () => {
+      // PostgreSQL's extended query protocol does not allow multiple commands
+      // in a prepared statement - this should fail
+      const { success, error } = await directSQLParameterized("SELECT $1; SELECT $2", [1, 2]);
+
+      expect(success).toBe(false);
+      expect(error).toBeDefined();
+      expect(error?.message).toMatch(/cannot insert multiple commands into a prepared statement/i);
+    });
+
+    test("Single parameterized query succeeds", async () => {
+      // Single statement with parameters should work fine
+      const { success, result } = await directSQLParameterized(
+        "SELECT $1::int + $2::int as sum",
+        [5, 3]
+      );
+
+      expect(success).toBe(true);
+      expect((result?.rows[0] as { sum: number } | undefined)?.sum).toBe(8);
+    });
+
+    test("Non-parameterized multi-statement succeeds (for comparison)", async () => {
+      // Non-parameterized queries use simple query protocol which allows multi-statements
+      const { success } = await directSQL("SELECT 1; SELECT 2;");
+
+      expect(success).toBe(true);
     });
   });
 });

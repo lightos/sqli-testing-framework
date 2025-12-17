@@ -1,4 +1,38 @@
 services:
+  # MySQL 5.7 - legacy version for testing
+  mysql-57:
+    image: mysql:5.7
+    container_name: sqli-mysql57
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: vulndb
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ptestpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MySQL 8.0 - latest stable version
+  mysql-80:
+    image: mysql:8.0
+    container_name: sqli-mysql80
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: vulndb
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ptestpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # PostgreSQL 12 - oldest supported version for testing
   postgres-12:
     image: postgres:12-alpine
@@ -34,6 +68,69 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # PHP driver tests
+  test-php:
+    image: php:8.2-cli
+    container_name: sqli-test-php
+    working_dir: /tests
+    command: >
+      sh -c "apt-get update -qq && apt-get install -y -qq libpq-dev > /dev/null 2>&1 &&
+             docker-php-ext-install pgsql > /dev/null 2>&1 &&
+             php test-stacked-queries.php"
+    volumes:
+      - ../drivers/php:/tests:ro
+    environment:
+      PG_HOST: postgres-16
+      PG_PORT: "5432"
+      PG_DATABASE: vulndb
+      PG_USER: postgres
+      PG_PASSWORD: testpass
+    depends_on:
+      postgres-16:
+        condition: service_healthy
+    profiles:
+      - driver-tests
+
+  # Python psycopg2 driver tests (client-side binding)
+  test-python-psycopg2:
+    image: python:3.11-slim
+    container_name: sqli-test-psycopg2
+    working_dir: /tests
+    command: sh -c "pip install --no-cache-dir psycopg2-binary==2.9.11 && python test-stacked-queries.py"
+    volumes:
+      - ../drivers/python:/tests:ro
+    environment:
+      PG_HOST: postgres-16
+      PG_PORT: "5432"
+      PG_DATABASE: vulndb
+      PG_USER: postgres
+      PG_PASSWORD: testpass
+    depends_on:
+      postgres-16:
+        condition: service_healthy
+    profiles:
+      - driver-tests
+
+  # Python psycopg3 driver tests (server-side binding)
+  test-python-psycopg3:
+    image: python:3.11-slim
+    container_name: sqli-test-psycopg3
+    working_dir: /tests
+    command: sh -c "pip install --no-cache-dir 'psycopg[binary]==3.3.2' && python test-stacked-queries-psycopg3.py"
+    volumes:
+      - ../drivers/python:/tests:ro
+    environment:
+      PG_HOST: postgres-16
+      PG_PORT: "5432"
+      PG_DATABASE: vulndb
+      PG_USER: postgres
+      PG_PASSWORD: testpass
+    depends_on:
+      postgres-16:
+        condition: service_healthy
+    profiles:
+      - driver-tests
 
 networks:
   default:

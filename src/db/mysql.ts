@@ -1,28 +1,28 @@
-import { ConnectionManager, type QueryResult } from "./connection.js";
+import { MySQLConnectionManager, type MySQLQueryResult } from "./mysql-connection.js";
 import { measureTime, type TimingResult } from "../utils/timing.js";
 import { logger } from "../utils/logger.js";
 
-export interface SQLExecutionResult {
+export interface MySQLExecutionResult {
   success: boolean;
-  result?: QueryResult;
+  result?: MySQLQueryResult;
   error?: Error;
   timing: TimingResult;
 }
 
 /**
- * PostgreSQL-specific adapter for SQL injection testing
+ * MySQL-specific adapter for SQL injection testing
  */
-export class PostgreSQLAdapter {
-  private connection: ConnectionManager;
+export class MySQLAdapter {
+  private connection: MySQLConnectionManager;
 
-  constructor(connection: ConnectionManager) {
+  constructor(connection: MySQLConnectionManager) {
     this.connection = connection;
   }
 
   /**
    * Execute SQL and capture results, errors, and timing
    */
-  async execute(sql: string): Promise<SQLExecutionResult> {
+  async execute(sql: string): Promise<MySQLExecutionResult> {
     const { result, durationMs, startTime, endTime } = await measureTime(async () => {
       try {
         const queryResult = await this.connection.query(sql);
@@ -41,30 +41,9 @@ export class PostgreSQLAdapter {
   }
 
   /**
-   * Execute parameterized SQL and capture results, errors, and timing
-   */
-  async executeParameterized(sql: string, params: unknown[]): Promise<SQLExecutionResult> {
-    const { result, durationMs, startTime, endTime } = await measureTime(async () => {
-      try {
-        const queryResult = await this.connection.queryParameterized(sql, params);
-        return { success: true, result: queryResult };
-      } catch (error) {
-        return { success: false, error: error as Error };
-      }
-    });
-
-    return {
-      success: result.success,
-      result: result.result,
-      error: result.error,
-      timing: { durationMs, startTime, endTime },
-    };
-  }
-
-  /**
    * Execute SQL expecting success
    */
-  async executeExpectingSuccess(sql: string): Promise<QueryResult> {
+  async executeExpectingSuccess(sql: string): Promise<MySQLQueryResult> {
     const { success, result, error } = await this.execute(sql);
 
     if (!success || !result) {
@@ -122,26 +101,13 @@ export class PostgreSQLAdapter {
   }
 
   /**
-   * Test if stacked queries are supported
-   */
-  async testStackedQueries(): Promise<boolean> {
-    try {
-      // Try executing two statements
-      await this.connection.query("SELECT 1; SELECT 2;");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Get database version as a parsed object
    */
   async getVersionInfo(): Promise<{ major: number; minor: number; full: string }> {
     const versionString = await this.connection.getVersion();
 
-    // Parse "PostgreSQL 16.1 (Debian 16.1-1.pgdg120+1)" format
-    const match = /PostgreSQL (\d+)\.(\d+)/.exec(versionString);
+    // Parse "8.0.35" or "5.7.44" format
+    const match = /^(\d+)\.(\d+)/.exec(versionString);
 
     if (!match) {
       return { major: 0, minor: 0, full: versionString };
@@ -153,26 +119,4 @@ export class PostgreSQLAdapter {
       full: versionString,
     };
   }
-
-  /**
-   * Check if a specific feature is available based on version
-   */
-  async hasFeature(feature: PostgreSQLFeature): Promise<boolean> {
-    const version = await this.getVersionInfo();
-
-    switch (feature) {
-      case "pg_sleep":
-        return version.major >= 8 || (version.major === 8 && version.minor >= 2);
-      case "pg_read_file":
-        return version.major >= 8 || (version.major === 8 && version.minor >= 1);
-      case "copy_to_program":
-        return version.major >= 9 || (version.major === 9 && version.minor >= 3);
-      case "pg_sleep_for":
-        return version.major >= 9 || (version.major === 9 && version.minor >= 4);
-      default:
-        return false;
-    }
-  }
 }
-
-export type PostgreSQLFeature = "pg_sleep" | "pg_read_file" | "copy_to_program" | "pg_sleep_for";

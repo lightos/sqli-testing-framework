@@ -63,7 +63,9 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
   describe("UUID Generation (MAC alternative)", () => {
     test("gen_random_uuid() availability (PG 13+)", async () => {
       // Check version first
-      const { rows } = await directSQLExpectSuccess("SELECT current_setting('server_version_num')::int as ver");
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT current_setting('server_version_num')::int as ver"
+      );
       const ver = (rows[0] as { ver: number }).ver;
 
       if (ver >= 130000) {
@@ -90,19 +92,25 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
    */
   describe("Server Identification", () => {
     test("Listen addresses setting", async () => {
-      const { rows } = await directSQLExpectSuccess("SELECT current_setting('listen_addresses') as addr");
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT current_setting('listen_addresses') as addr"
+      );
       expect((rows[0] as { addr: string }).addr).toBeDefined();
     });
 
     test("Unix socket directories", async () => {
-      const { rows } = await directSQLExpectSuccess("SELECT current_setting('unix_socket_directories') as dir");
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT current_setting('unix_socket_directories') as dir"
+      );
       expect((rows[0] as { dir: string }).dir).toBeDefined();
     });
 
     test("pg_control_system() (Superuser)", async () => {
       // This requires superuser via pg_read_all_settings or similar usually?
       // Actually pg_control_system is restricted.
-      const { success, error } = await directSQL("SELECT system_identifier FROM pg_control_system()");
+      const { success, error } = await directSQL(
+        "SELECT system_identifier FROM pg_control_system()"
+      );
       if (!success) {
         expect(error?.message).toMatch(/permission denied|does not exist/i);
       } else {
@@ -119,7 +127,9 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("Attempt pg_read_file on /sys/class/net/eth0/address", async () => {
       // Note: Interface might be eth0, ens33, etc. This is opportunistic.
       // And strict pg_read_file restriction usually blocks absolute paths anyway unless superuser config allows.
-      const { success, error } = await directSQL("SELECT pg_read_file('/sys/class/net/eth0/address')");
+      const { success, error } = await directSQL(
+        "SELECT pg_read_file('/sys/class/net/eth0/address')"
+      );
 
       if (!success) {
         // Expect permission denied or path restriction error

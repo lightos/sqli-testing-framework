@@ -94,6 +94,23 @@ export class ConnectionManager {
   }
 
   /**
+   * Execute a parameterized SQL query using the connection pool
+   */
+  async queryParameterized(sql: string, params: unknown[]): Promise<QueryResult> {
+    if (!this.pool) {
+      throw new Error("Connection pool not initialized. Call connect() first.");
+    }
+
+    const result = await this.pool.query(sql, params);
+
+    return {
+      rows: result.rows as Record<string, unknown>[],
+      rowCount: result.rowCount,
+      command: result.command,
+    };
+  }
+
+  /**
    * Execute a SQL query with a fresh connection (bypasses pool)
    * Useful for testing connection-specific behaviors
    */

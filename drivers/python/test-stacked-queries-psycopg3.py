@@ -138,6 +138,7 @@ try:
 except ImportError:
     print("  SKIP: ClientCursor not available in this psycopg version")
 else:
+    ccur = None
     try:
         # In psycopg3, create ClientCursor by passing connection directly
         ccur = ClientCursor(conn)
@@ -152,11 +153,13 @@ else:
         else:
             print(f"  FAIL: Unexpected result: {row}")
             failed += 1
-        ccur.close()
     except Exception as e:
         print("  FAIL: ClientCursor rejected multi-statements with params")
         print(f"  Error: {type(e).__name__}: {e}")
         failed += 1
+    finally:
+        if ccur is not None:
+            ccur.close()
 print()
 
 # Cleanup

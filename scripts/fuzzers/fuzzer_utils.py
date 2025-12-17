@@ -73,7 +73,12 @@ def get_pg_connection(port=None):
         raise ValueError(PGPASSWORD_REQUIRED_MSG)
 
     conn = psycopg2.connect(
-        host=host, port=db_port, user=user, password=password, database=database
+        host=host,
+        port=db_port,
+        user=user,
+        password=password,
+        database=database,
+        connect_timeout=10,
     )
     conn.autocommit = True
     return conn

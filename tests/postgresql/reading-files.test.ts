@@ -349,7 +349,11 @@ describe("PostgreSQL Reading Files", () => {
 
       try {
         // Try to export (requires privileges)
-        const { success, error } = await directSQL(`SELECT lo_export(${oid}, '${tempFile}')`);
+        // Use parameterized query to safely handle paths with special characters
+        const { success, error } = await directSQLParameterized("SELECT lo_export($1, $2)", [
+          oid,
+          tempFile,
+        ]);
 
         if (!success) {
           expect(error?.message).toMatch(/permission denied|could not open/i);

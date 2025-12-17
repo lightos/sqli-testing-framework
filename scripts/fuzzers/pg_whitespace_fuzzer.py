@@ -2,10 +2,9 @@
 """
 PostgreSQL Whitespace Character Fuzzer
 Tests Unicode range 0x0000-0xFFFF to find valid whitespace substitutes.
-
-Usage: python pg_whitespace_fuzzer.py [port] [--verbose]
 """
 
+import argparse
 import sys
 
 import psycopg2
@@ -18,21 +17,31 @@ from fuzzer_utils import (
 )
 
 
-def main():
-    # Parse arguments
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL Whitespace Fuzzer - Tests Unicode range 0x0000-0xFFFF for valid whitespace substitutes."
+    )
+    parser.add_argument(
+        "port",
+        nargs="?",
+        type=int,
+        default=5432,
+        help="PostgreSQL port (default: 5432)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output - log exceptions to stderr",
+    )
+    return parser.parse_args()
 
-    if args:
-        try:
-            port = int(args[0])
-        except ValueError:
-            print(
-                f"Error: Invalid port '{args[0]}' - must be an integer", file=sys.stderr
-            )
-            sys.exit(1)
-    else:
-        port = 5432
+
+def main() -> int:
+    args = parse_args()
+    port = args.port
+    verbose = args.verbose
 
     conn = None
     cur = None
@@ -113,6 +122,8 @@ def main():
             char_repr = repr(chr(i)) if 0x20 <= i < 0x7F else ""
             print(f"| 0x{i:04X} | {i:5} | {char_repr:11} | {get_char_description(i)} |")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

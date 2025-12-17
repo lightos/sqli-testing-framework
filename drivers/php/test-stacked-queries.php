@@ -62,7 +62,10 @@ if ($result) {
         $failed++;
     }
     // Cleanup
-    pg_query($conn, "DELETE FROM logs WHERE action = '$testAction'");
+    $cleanup = @pg_query($conn, "DELETE FROM logs WHERE action = '$testAction'");
+    if ($cleanup === false) {
+        echo "  Warning: Cleanup failed: " . pg_last_error($conn) . "\n";
+    }
 } else {
     echo "  FAIL: pg_query() rejected stacked modification\n";
     echo "  Error: " . pg_last_error($conn) . "\n";

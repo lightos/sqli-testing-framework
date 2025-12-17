@@ -9,8 +9,23 @@
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import pg from "pg";
-import mysql from "mysql2/promise";
+import mysql, { type ResultSetHeader } from "mysql2/promise";
 import { logger } from "../utils/logger.js";
+
+/**
+ * Type guard to check if MySQL result is a ResultSetHeader (non-SELECT result).
+ * Checks for both affectedRows and fieldCount to robustly discriminate from row data.
+ */
+function isResultSetHeader(result: unknown): result is ResultSetHeader {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    "affectedRows" in result &&
+    typeof (result as ResultSetHeader).affectedRows === "number" &&
+    "fieldCount" in result &&
+    typeof (result as ResultSetHeader).fieldCount === "number"
+  );
+}
 
 const { Pool: PgPool } = pg;
 
@@ -87,17 +102,16 @@ class MySQLAdapter implements DatabaseAdapter {
 
   async query(sql: string): Promise<QueryResult> {
     const [result] = await this.pool.query(sql);
-    // mysql2 returns RowDataPacket[] for SELECT, ResultSetHeader for INSERT/UPDATE/DELETE
-    if (Array.isArray(result)) {
-      return { rows: result as Record<string, unknown>[] };
+    // mysql2 returns ResultSetHeader for INSERT/UPDATE/DELETE, RowDataPacket[] for SELECT
+    if (isResultSetHeader(result)) {
+      return {
+        rows: [],
+        affectedRows: result.affectedRows,
+        insertId: result.insertId,
+      };
     }
-    // ResultSetHeader for non-SELECT statements
-    const header = result as mysql.ResultSetHeader;
-    return {
-      rows: [],
-      affectedRows: header.affectedRows,
-      insertId: header.insertId,
-    };
+    // SELECT queries return array of rows (including empty arrays)
+    return { rows: result as Record<string, unknown>[] };
   }
 
   async close(): Promise<void> {
@@ -347,7 +361,7 @@ export async function startServer(config?: Partial<AppConfig>): Promise<{
   cleanup: () => Promise<void>;
 }> {
   // Determine database type: config takes priority, then environment, then default
-  const dbTypeEnv = process.env.DB_TYPE?.toLowerCase();
+  const dbTypeEnv = process.env.DB_TYPE?.trim().toLowerCase();
   let envDbType: DatabaseType = "postgresql";
 
   if (dbTypeEnv === "mysql") {

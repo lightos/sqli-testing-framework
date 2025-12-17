@@ -7,6 +7,12 @@ export interface MySQLConnectionConfig {
   user: string;
   password: string;
   database: string;
+  /** Maximum number of connections in the pool (default: 10) */
+  connectionLimit?: number;
+  /** Maximum number of queued connection requests (default: 50) */
+  queueLimit?: number;
+  /** Connection timeout in milliseconds (default: 10000) */
+  connectTimeoutMs?: number;
 }
 
 export interface MySQLQueryResult<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -58,9 +64,9 @@ export class MySQLConnectionManager {
       password: this.config.password,
       database: this.config.database,
       waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 50,
-      connectTimeout: 10000, // 10 seconds
+      connectionLimit: this.config.connectionLimit ?? 10,
+      queueLimit: this.config.queueLimit ?? 50,
+      connectTimeout: this.config.connectTimeoutMs ?? 10000,
     });
 
     // Test connection

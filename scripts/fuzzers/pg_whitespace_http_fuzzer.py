@@ -5,6 +5,7 @@ Tests whitespace characters through a vulnerable web app.
 """
 
 import argparse
+import os
 import sys
 import urllib.parse
 
@@ -56,7 +57,7 @@ def main() -> int:
         r = requests.get(f"{base_url}/users?id=1", timeout=5)
         r.json()  # Verify JSON response
         print("  Target is reachable")
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"  ERROR: Cannot reach target: {e}")
         return 1
 
@@ -217,9 +218,13 @@ def main() -> int:
         print(f"  /**/: error - {e}")
 
     # Write results
+    write_ok = False
     try:
         with open(outfile, "w", encoding="utf-8") as f:
             f.write("\n".join(results))
+            f.flush()
+            os.fsync(f.fileno())
+        write_ok = True
     except OSError as e:
         print(f"ERROR: Failed to write results to {outfile}: {e}", file=sys.stderr)
         # Attempt to save partial results to fallback file
@@ -227,7 +232,10 @@ def main() -> int:
         try:
             with open(fallback, "w", encoding="utf-8") as f:
                 f.write("\n".join(results))
+                f.flush()
+                os.fsync(f.fileno())
             print(f"Partial results saved to: {fallback}", file=sys.stderr)
+            write_ok = True
         except OSError as e2:
             print(
                 f"ERROR: Failed to write fallback file {fallback}: {e2}",
@@ -235,7 +243,10 @@ def main() -> int:
             )
 
     print("\n" + "=" * 60)
-    print(f"Results written to: {outfile}")
+    if write_ok:
+        print(f"Results written to: {outfile}")
+    else:
+        print("Results could not be written to any file")
     print("=" * 60)
 
     # Summary
@@ -243,7 +254,7 @@ def main() -> int:
     print(f"  Single char whitespace via HTTP: {len(single_valid)}")
     print(f"  Characters: {[hex(x) for x in single_valid]}")
 
-    return 0
+    return 0 if write_ok else 1
 
 
 if __name__ == "__main__":

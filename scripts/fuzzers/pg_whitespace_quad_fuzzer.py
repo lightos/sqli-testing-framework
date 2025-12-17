@@ -5,8 +5,11 @@ Tests 4-byte combinations (0x00-0x7F charset)
 """
 
 import argparse
+import os
 import sys
 from itertools import product
+
+import psycopg2
 
 from fuzzer_utils import get_pg_connection, log_debug
 
@@ -80,7 +83,7 @@ def main() -> int:
                     known_valid += 1
             except KeyboardInterrupt:
                 raise
-            except Exception as e:
+            except psycopg2.Error as e:
                 log_debug(verbose, f"Phase1 {combo}: {type(e).__name__}: {e}")
         print(f"  Valid: {known_valid}/625")
         results.append(f"Known whitespace 4-byte combos: {known_valid}/625")
@@ -98,7 +101,7 @@ def main() -> int:
                         unexpected.add((b, *combo))
                 except KeyboardInterrupt:
                     raise
-                except Exception as e:
+                except psycopg2.Error as e:
                     log_debug(
                         verbose, f"Phase2 ({b:02X},ws,ws,ws): {type(e).__name__}: {e}"
                     )
@@ -118,7 +121,7 @@ def main() -> int:
                             unexpected.add((w1, b, *combo))
                     except KeyboardInterrupt:
                         raise
-                    except Exception as e:
+                    except psycopg2.Error as e:
                         log_debug(
                             verbose,
                             f"Phase3 ({w1:02X},{b:02X},ws,ws): {type(e).__name__}: {e}",
@@ -139,7 +142,7 @@ def main() -> int:
                             unexpected.add((*combo, b, w))
                     except KeyboardInterrupt:
                         raise
-                    except Exception as e:
+                    except psycopg2.Error as e:
                         log_debug(
                             verbose,
                             f"Phase4 (ws,ws,{b:02X},{w:02X}): {type(e).__name__}: {e}",
@@ -159,7 +162,7 @@ def main() -> int:
                         unexpected.add((*combo, b))
                 except KeyboardInterrupt:
                     raise
-                except Exception as e:
+                except psycopg2.Error as e:
                     log_debug(
                         verbose, f"Phase5 (ws,ws,ws,{b:02X}): {type(e).__name__}: {e}"
                     )
@@ -179,7 +182,7 @@ def main() -> int:
                             unexpected.add((b1, b2, *combo))
                     except KeyboardInterrupt:
                         raise
-                    except Exception as e:
+                    except psycopg2.Error as e:
                         log_debug(
                             verbose,
                             f"Phase6 ({b1:02X},{b2:02X},ws,ws): {type(e).__name__}: {e}",
@@ -202,7 +205,7 @@ def main() -> int:
                             unexpected.add((*combo, b1, b2))
                     except KeyboardInterrupt:
                         raise
-                    except Exception as e:
+                    except psycopg2.Error as e:
                         log_debug(
                             verbose,
                             f"Phase7 (ws,ws,{b1:02X},{b2:02X}): {type(e).__name__}: {e}",
@@ -224,7 +227,7 @@ def main() -> int:
                                 unexpected.add((b1, w1, b2, w2))
                         except KeyboardInterrupt:
                             raise
-                        except Exception as e:
+                        except psycopg2.Error as e:
                             log_debug(
                                 verbose,
                                 f"Phase8a ({b1:02X},{w1:02X},{b2:02X},{w2:02X}): {type(e).__name__}: {e}",
@@ -236,7 +239,7 @@ def main() -> int:
                                 unexpected.add((w1, b1, w2, b2))
                         except KeyboardInterrupt:
                             raise
-                        except Exception as e:
+                        except psycopg2.Error as e:
                             log_debug(
                                 verbose,
                                 f"Phase8b ({w1:02X},{b1:02X},{w2:02X},{b2:02X}): {type(e).__name__}: {e}",
@@ -272,9 +275,13 @@ def main() -> int:
 
     # Write to file
     content = "\n".join(results)
+    write_ok = False
     try:
         with open(outfile, "w", encoding="utf-8") as f:
             f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        write_ok = True
         print("\n" + "=" * 60)
         print(f"RESULTS: {len(unexpected)} unexpected combinations")
         print(f"Written to: {outfile}")
@@ -286,12 +293,14 @@ def main() -> int:
         try:
             with open(partial_file, "w", encoding="utf-8") as f:
                 f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
             print(f"Partial results saved to: {partial_file}", file=sys.stderr)
+            write_ok = True
         except OSError as e2:
             print(f"Failed to save partial results: {e2}", file=sys.stderr)
-        return 1
 
-    return 0
+    return 0 if write_ok else 1
 
 
 if __name__ == "__main__":

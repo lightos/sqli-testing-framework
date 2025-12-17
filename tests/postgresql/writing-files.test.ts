@@ -284,11 +284,13 @@ describe("PostgreSQL Writing Files", () => {
     });
 
     test("INSERT INTO pg_largeobject pattern", async () => {
-      // Create LO first
-      const { rows: createRows } = await directSQLExpectSuccess("SELECT lo_create(0) as oid");
-      const oid = (createRows[0] as { oid: number }).oid;
+      let oid: number | undefined;
 
       try {
+        // Create LO first
+        const { rows: createRows } = await directSQLExpectSuccess("SELECT lo_create(0) as oid");
+        oid = (createRows[0] as { oid: number }).oid;
+
         // Insert data into pg_largeobject
         const { success, error } = await directSQL(
           `INSERT INTO pg_largeobject (loid, pageno, data) VALUES (${oid}, 0, decode('48656c6c6f', 'hex'))`
@@ -306,8 +308,10 @@ describe("PostgreSQL Writing Files", () => {
         );
         expect((readRows[0] as { content: string }).content).toBe("Hello");
       } finally {
-        // Clean up
-        await directSQL(`SELECT lo_unlink(${oid})`);
+        // Clean up only if OID was created
+        if (oid != null) {
+          await directSQL(`SELECT lo_unlink(${oid})`);
+        }
       }
     });
 
@@ -324,11 +328,14 @@ describe("PostgreSQL Writing Files", () => {
           PERFORM lo_unlink(oid_var);
         END $$
       `);
-      if (!success) {
+      if (success) {
+        // DO block executed successfully
+        expect(success).toBe(true);
+        expect(error).toBeUndefined();
+      } else {
         // Permission denied is expected for non-superuser
         expect(error?.message).toMatch(/permission denied|must be owner/i);
       }
-      expect(true).toBe(true);
     });
 
     test("lo_from_bytea with lo_export (separate statements for cleanup)", async () => {
@@ -402,15 +409,17 @@ describe("PostgreSQL Writing Files", () => {
    * @kb-section Sensitive File Targets
    */
   describe("Sensitive file targets (privilege checks)", () => {
-    test("SSH authorized_keys write attempt", async () => {
-      // This would only work if postgres user has write access to target's .ssh
+    test("Write to /tmp to validate file write capability (SSH key format)", async () => {
+      // Validates COPY TO file mechanism using SSH key format content
+      // Target is /tmp to avoid permission issues - real attacks would target ~/.ssh/authorized_keys
       const { success, error } = await directSQL(
         "COPY (SELECT 'ssh-rsa AAAA... test@host') TO '/tmp/.ssh_test_authorized_keys'"
       );
       if (!success) {
         expect(error?.message).toMatch(/permission denied|could not open/i);
+      } else {
+        expect(success).toBe(true);
       }
-      expect(true).toBe(true);
     });
 
     test("Cron job write attempt", async () => {
@@ -487,12 +496,14 @@ describe("PostgreSQL Writing Files", () => {
   describe("Writable directory discovery", () => {
     test("pg_ls_dir for potential write targets", async () => {
       // List directory to find potential write locations
-      const { success, result } = await directSQL("SELECT pg_ls_dir('/tmp') LIMIT 5");
+      const { success, result, error } = await directSQL("SELECT pg_ls_dir('/tmp') LIMIT 5");
       if (success && result) {
-        expect(result.rows.length).toBeGreaterThanOrEqual(0);
+        // When pg_ls_dir succeeds, /tmp should have at least one entry
+        expect(result.rows.length).toBeGreaterThan(0);
+      } else {
+        // Permission denied is expected for non-superuser
+        expect(error?.message).toMatch(/permission denied|must be superuser/i);
       }
-      // Either works or permission denied
-      expect(true).toBe(true);
     });
 
     test("Test write then verify via lo_get", async () => {

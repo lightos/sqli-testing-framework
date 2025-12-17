@@ -2,10 +2,9 @@
 """
 PostgreSQL Double Whitespace Character Fuzzer
 Tests all combinations of two bytes (0x00-0xFF) as whitespace.
-
-Usage: python pg_whitespace_double_fuzzer.py [port] [--verbose]
 """
 
+import argparse
 import sys
 
 import psycopg2
@@ -13,23 +12,31 @@ import psycopg2
 from fuzzer_utils import get_pg_connection, log_debug
 
 
-def main():
-    # Parse arguments
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL Double Whitespace Fuzzer - Tests all 2-byte combinations (0x00-0xFF) as whitespace."
+    )
+    parser.add_argument(
+        "port",
+        nargs="?",
+        type=int,
+        default=5432,
+        help="PostgreSQL port (default: 5432)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output - log exceptions to stderr",
+    )
+    return parser.parse_args()
 
-    # Parse port with error handling
-    if args:
-        try:
-            port = int(args[0])
-        except ValueError:
-            print(
-                f"ERROR: Invalid port '{args[0]}' - must be a valid integer",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-    else:
-        port = 5432
+
+def main() -> int:
+    args = parse_args()
+    port = args.port
+    verbose = args.verbose
 
     conn = None
     cur = None
@@ -106,6 +113,8 @@ def main():
 
     print(f"\nUnique bytes that appear in valid combinations: {sorted(chars_in_valid)}")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

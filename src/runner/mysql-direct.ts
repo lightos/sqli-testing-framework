@@ -36,11 +36,18 @@ export async function initMySQLDirectRunner(): Promise<void> {
  */
 export async function cleanupMySQLDirectRunner(): Promise<void> {
   if (connection) {
+    let disconnectError: Error | null = null;
     try {
       await connection.disconnect();
+    } catch (error) {
+      disconnectError = error as Error;
+      logger.error(`Failed to disconnect MySQL connection: ${disconnectError.message}`);
     } finally {
       connection = null;
       adapter = null;
+    }
+    if (disconnectError) {
+      throw disconnectError;
     }
   }
 }
@@ -83,12 +90,19 @@ export async function mysqlDirectSQLExpectError(sql: string): Promise<Error> {
 
 /**
  * Test timing-based injection directly.
- * Validates timing >= (expectedDelayMs - toleranceMs) and optionally <= (maxExpectedMs + toleranceMs).
+ *
+ * Validation logic:
+ * - Lower bound: timing >= (expectedDelayMs - toleranceMs)
+ * - Upper bound: timing <= (maxExpectedMs + toleranceMs) when maxExpectedMs is provided
+ *
+ * Note: toleranceMs is subtracted from the lower bound and added to the upper bound,
+ * allowing for timing variance in both directions. When maxExpectedMs is omitted,
+ * no upper bound check is performed.
  *
  * @param sql - SQL query to execute
- * @param expectedDelayMs - Expected delay in milliseconds
- * @param toleranceMs - Tolerance applied symmetrically to both bounds (default 200ms)
- * @param maxExpectedMs - Optional upper bound; if provided, validates timing <= maxExpectedMs + toleranceMs
+ * @param expectedDelayMs - Expected delay in milliseconds (lower bound before tolerance)
+ * @param toleranceMs - Tolerance in ms: subtracted from lower bound, added to upper bound (default 200ms)
+ * @param maxExpectedMs - Optional upper bound (exclusive before tolerance is added)
  */
 export async function mysqlDirectTimingTest(
   sql: string,

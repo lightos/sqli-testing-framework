@@ -75,13 +75,10 @@ services:
 
   # PHP driver tests
   test-php:
-    image: php:8.2-cli
+    build:
+      context: ./php-pgsql
     container_name: sqli-test-php
-    working_dir: /tests
-    command: >
-      sh -c "apt-get update -qq && apt-get install -y -qq libpq-dev > /dev/null &&
-             docker-php-ext-install pgsql > /dev/null &&
-             php test-stacked-queries.php"
+    command: php test-stacked-queries.php
     volumes:
       - ../drivers/php:/tests:ro
     environment:

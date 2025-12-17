@@ -37,3 +37,14 @@ pids/
 venv/
 .venv/
 env/
+
+# Python build and distribution
+build/
+*.egg/
+*.egg-link
+
+# Python tooling caches
+.tox/
+.coverage
+htmlcov/
+*.so

@@ -403,12 +403,13 @@ describe("PostgreSQL Privilege Escalation", () => {
    */
   describe("CREATEROLE exploitation patterns", () => {
     test("Verify CREATEROLE is required for exploitation", async () => {
-      // Check multiple role attributes needed for exploitation patterns
+      // Check role attributes needed for exploitation patterns
+      // Note: roladmin column only exists in PostgreSQL 16+
       const { rows } = await directSQLExpectSuccess(`
-        SELECT rolcreaterole, rolsuper, roladmin
+        SELECT rolcreaterole, rolsuper
         FROM pg_roles WHERE rolname = current_user
       `);
-      const role = rows[0] as { rolcreaterole: boolean; rolsuper: boolean; roladmin: boolean };
+      const role = rows[0] as { rolcreaterole: boolean; rolsuper: boolean };
       // Non-superuser test accounts typically don't have CREATEROLE
       // This documents the privilege state for exploitation context
       expect(role.rolcreaterole || role.rolsuper).toBeDefined();
@@ -539,10 +540,18 @@ describe("PostgreSQL Privilege Escalation", () => {
       // Helper to escape connection string values
       // Order matters: escape backslashes first, then single quotes
       // Otherwise newly inserted backslashes get double-escaped
+      // Input: test\path'value (contains both backslash and single quote)
+      // Expected: test\\path\'value (both escaped for connection strings)
       const { rows } = await directSQLExpectSuccess(`
-        SELECT replace(replace('test''value', '\\', '\\\\'), '''', '\\''') as escaped
+        SELECT replace(replace(E'test\\\\path''value', '\\', '\\\\'), '''', '\\''') as escaped
       `);
-      expect((rows[0] as { escaped: string }).escaped).toContain("test");
+      const escaped = (rows[0] as { escaped: string }).escaped;
+      // Verify backslash was escaped (\ -> \\)
+      expect(escaped).toContain("\\\\");
+      // Verify single quote was escaped (' -> \')
+      expect(escaped).toContain("\\'");
+      // Verify the full expected output
+      expect(escaped).toBe("test\\\\path\\'value");
     });
 
     test("Check dblink extension availability", async () => {

@@ -4,6 +4,7 @@ PostgreSQL Comprehensive WAF Evasion Fuzzer
 Tests various encoding/obfuscation techniques for SQL injection.
 """
 
+import argparse
 import os
 import sys
 import tempfile
@@ -11,6 +12,27 @@ import traceback
 from datetime import datetime, timezone
 
 import psycopg2
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="PostgreSQL Comprehensive WAF Evasion Fuzzer - Tests various encoding/obfuscation techniques."
+    )
+    parser.add_argument(
+        "port",
+        nargs="?",
+        type=int,
+        default=5432,
+        help="PostgreSQL port (default: 5432)",
+    )
+    parser.add_argument(
+        "outfile",
+        nargs="?",
+        default=None,
+        help="Output file for results (default: pg_comprehensive_results_<port>.txt)",
+    )
+    return parser.parse_args()
 
 
 class PgFuzzer:
@@ -51,7 +73,7 @@ class PgFuzzer:
                 "query": query[:100],
                 "name": name,
             }
-        except Exception as e:
+        except psycopg2.Error as e:
             return {
                 "success": False,
                 "error": str(e)[:100],
@@ -97,7 +119,7 @@ def fuzz_dollar_quotes(fuzzer):
     special_chars = "!@#%^&*()-+=[]{}|;:',.<>?/`~"
     for char in special_chars:
         tag = f"${char}$test${char}$"
-        r = fuzzer.test(f"char {repr(char)}", f"SELECT {tag}")
+        r = fuzzer.test(f"char {char!r}", f"SELECT {tag}")
         if r["success"]:
             results.append((f"special:{char}", True, tag))
             print(f"    ✓ ${char}$ works!")
@@ -627,11 +649,10 @@ def fuzz_identifiers(fuzzer):
     return results
 
 
-def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
-    outfile = (
-        sys.argv[2] if len(sys.argv) > 2 else f"pg_comprehensive_results_{port}.txt"
-    )
+def main() -> int:
+    args = parse_args()
+    port = args.port
+    outfile = args.outfile if args.outfile else f"pg_comprehensive_results_{port}.txt"
 
     print("PostgreSQL Comprehensive WAF Evasion Fuzzer")
     print(f"Port: {port}")

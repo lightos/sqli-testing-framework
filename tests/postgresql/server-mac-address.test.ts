@@ -84,17 +84,22 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
         return;
       }
 
-      const { success } = await directSQL("SELECT gen_random_uuid()");
+      const { success, result } = await directSQL("SELECT gen_random_uuid() as uuid");
       expect(success).toBe(true);
+
+      // Validate UUID format (canonical 8-4-4-4-12 hex pattern)
+      const uuid = (result?.rows[0] as { uuid: string }).uuid;
+      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
 
     test("uuid-ossp extension check", async () => {
-      // Just check if extension is installed or available
+      // Smoke check that pg_extension table is queryable
+      // Extension may or may not be installed depending on environment
       const { rows } = await directSQLExpectSuccess(
         "SELECT count(*)::int as cnt FROM pg_extension WHERE extname = 'uuid-ossp'"
       );
       const count = (rows[0] as { cnt: number }).cnt;
-      expect(count).toBeGreaterThanOrEqual(0); // Extension may or may not be installed
+      expect(typeof count).toBe("number");
     });
   });
 
@@ -168,9 +173,12 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
 
       if (!success) {
         expect(error?.message).toMatch(/permission denied|must be superuser/i);
+      } else {
+        // Verify COPY actually inserted data
+        const { rows } = await directSQLExpectSuccess("SELECT COUNT(*)::int as cnt FROM net_info");
+        const count = (rows[0] as { cnt: number }).cnt;
+        expect(count).toBeGreaterThan(0);
       }
-      // If success, the COPY command executed - no additional assertion needed
-      // as the query completing without error is sufficient validation
     });
   });
 });

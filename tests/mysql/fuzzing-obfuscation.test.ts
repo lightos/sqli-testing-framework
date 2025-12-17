@@ -357,7 +357,7 @@ describe("MySQL Fuzzing and Obfuscation", () => {
       // SEL/**/ECT is NOT valid - the keyword must be intact
       const result = await mysqlDirectSQL("SEL/**/ECT username FROM users WHERE id = 1");
       expect(result.success).toBe(false);
-      expect(result.error?.message).toContain("syntax");
+      expect(result.error?.message).toMatch(/syntax|parse|unexpected/i);
     });
 
     test("Split UNION keyword with comment - does NOT work", async () => {

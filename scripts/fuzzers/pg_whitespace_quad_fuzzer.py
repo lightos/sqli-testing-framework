@@ -8,13 +8,7 @@ Usage: python pg_whitespace_quad_fuzzer.py [port] [outfile] [--verbose]
 
 import sys
 from itertools import product
-from fuzzer_utils import get_pg_connection
-
-
-def log_debug(verbose: bool, msg: str) -> None:
-    """Print debug message if verbose mode is enabled."""
-    if verbose:
-        print(f"[DEBUG] {msg}", file=sys.stderr)
+from fuzzer_utils import get_pg_connection, log_debug
 
 
 def main():
@@ -22,7 +16,18 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
 
-    port = int(args[0]) if args else 5432
+    # Parse port with error handling
+    if args:
+        try:
+            port = int(args[0])
+        except ValueError:
+            print(
+                f"ERROR: Invalid port '{args[0]}' - must be a valid integer",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        port = 5432
     outfile = args[1] if len(args) > 1 else "pg_quad_results.txt"
 
     conn = None
@@ -37,7 +42,7 @@ def main():
 
         cur.execute("SELECT version()")
         row = cur.fetchone()
-        version = row[0].split(',')[0] if row else "unknown"
+        version = row[0].split(",")[0] if row else "unknown"
 
         single_ws = {0x09, 0x0A, 0x0C, 0x0D, 0x20}
         non_ws = [b for b in range(128) if b not in single_ws]  # 123 bytes
@@ -55,7 +60,7 @@ def main():
         print("\nPhase 1: Known whitespace combos (5⁴ = 625)...")
         for combo in product(single_ws, repeat=4):
             try:
-                chars = ''.join(chr(c) for c in combo)
+                chars = "".join(chr(c) for c in combo)
                 cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                 if len(cur.fetchall()) == 2:
                     known_valid += 1
@@ -73,14 +78,16 @@ def main():
             for combo in product(single_ws, repeat=3):
                 count += 1
                 try:
-                    chars = chr(b) + ''.join(chr(c) for c in combo)
+                    chars = chr(b) + "".join(chr(c) for c in combo)
                     cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                     if len(cur.fetchall()) == 2:
                         unexpected.add((b, *combo))
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    log_debug(verbose, f"Phase2 ({b:02X},ws,ws,ws): {type(e).__name__}: {e}")
+                    log_debug(
+                        verbose, f"Phase2 ({b:02X},ws,ws,ws): {type(e).__name__}: {e}"
+                    )
         print(f"  Tested: {count}")
 
         # Phase 3: [ws][x][ws][ws]
@@ -91,14 +98,17 @@ def main():
                 for combo in product(single_ws, repeat=2):
                     count += 1
                     try:
-                        chars = chr(w1) + chr(b) + ''.join(chr(c) for c in combo)
+                        chars = chr(w1) + chr(b) + "".join(chr(c) for c in combo)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
                             unexpected.add((w1, b, *combo))
                     except KeyboardInterrupt:
                         raise
                     except Exception as e:
-                        log_debug(verbose, f"Phase3 ({w1:02X},{b:02X},ws,ws): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase3 ({w1:02X},{b:02X},ws,ws): {type(e).__name__}: {e}",
+                        )
         print(f"  Tested: {count}")
 
         # Phase 4: [ws][ws][x][ws]
@@ -109,14 +119,17 @@ def main():
                 for w in single_ws:
                     count += 1
                     try:
-                        chars = ''.join(chr(c) for c in combo) + chr(b) + chr(w)
+                        chars = "".join(chr(c) for c in combo) + chr(b) + chr(w)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
                             unexpected.add((*combo, b, w))
                     except KeyboardInterrupt:
                         raise
                     except Exception as e:
-                        log_debug(verbose, f"Phase4 (ws,ws,{b:02X},{w:02X}): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase4 (ws,ws,{b:02X},{w:02X}): {type(e).__name__}: {e}",
+                        )
         print(f"  Tested: {count}")
 
         # Phase 5: [ws][ws][ws][x]
@@ -126,14 +139,16 @@ def main():
             for b in non_ws:
                 count += 1
                 try:
-                    chars = ''.join(chr(c) for c in combo) + chr(b)
+                    chars = "".join(chr(c) for c in combo) + chr(b)
                     cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                     if len(cur.fetchall()) == 2:
                         unexpected.add((*combo, b))
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    log_debug(verbose, f"Phase5 (ws,ws,ws,{b:02X}): {type(e).__name__}: {e}")
+                    log_debug(
+                        verbose, f"Phase5 (ws,ws,ws,{b:02X}): {type(e).__name__}: {e}"
+                    )
         print(f"  Tested: {count}")
 
         # Phase 6: [x][x][ws][ws] - two non-ws
@@ -144,14 +159,17 @@ def main():
                 for combo in product(single_ws, repeat=2):
                     count += 1
                     try:
-                        chars = chr(b1) + chr(b2) + ''.join(chr(c) for c in combo)
+                        chars = chr(b1) + chr(b2) + "".join(chr(c) for c in combo)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
                             unexpected.add((b1, b2, *combo))
                     except KeyboardInterrupt:
                         raise
                     except Exception as e:
-                        log_debug(verbose, f"Phase6 ({b1:02X},{b2:02X},ws,ws): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase6 ({b1:02X},{b2:02X},ws,ws): {type(e).__name__}: {e}",
+                        )
             if b1 % 20 == 0:
                 print(f"    ...{count} tested", file=sys.stderr)
         print(f"  Tested: {count}")
@@ -164,14 +182,17 @@ def main():
                 for b2 in non_ws:
                     count += 1
                     try:
-                        chars = ''.join(chr(c) for c in combo) + chr(b1) + chr(b2)
+                        chars = "".join(chr(c) for c in combo) + chr(b1) + chr(b2)
                         cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
                         if len(cur.fetchall()) == 2:
                             unexpected.add((*combo, b1, b2))
                     except KeyboardInterrupt:
                         raise
                     except Exception as e:
-                        log_debug(verbose, f"Phase7 (ws,ws,{b1:02X},{b2:02X}): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase7 (ws,ws,{b1:02X},{b2:02X}): {type(e).__name__}: {e}",
+                        )
         print(f"  Tested: {count}")
 
         # Phase 8: [x][ws][x][ws] and [ws][x][ws][x] - alternating
@@ -190,7 +211,10 @@ def main():
                         except KeyboardInterrupt:
                             raise
                         except Exception as e:
-                            log_debug(verbose, f"Phase8a ({b1:02X},{w1:02X},{b2:02X},{w2:02X}): {type(e).__name__}: {e}")
+                            log_debug(
+                                verbose,
+                                f"Phase8a ({b1:02X},{w1:02X},{b2:02X},{w2:02X}): {type(e).__name__}: {e}",
+                            )
                         try:
                             chars = chr(w1) + chr(b1) + chr(w2) + chr(b2)
                             cur.execute(f"SELECT 1 UNION{chars}SELECT 2")
@@ -199,7 +223,10 @@ def main():
                         except KeyboardInterrupt:
                             raise
                         except Exception as e:
-                            log_debug(verbose, f"Phase8b ({w1:02X},{b1:02X},{w2:02X},{b2:02X}): {type(e).__name__}: {e}")
+                            log_debug(
+                                verbose,
+                                f"Phase8b ({w1:02X},{b1:02X},{w2:02X},{b2:02X}): {type(e).__name__}: {e}",
+                            )
         print(f"  Tested: {count * 2}")
     finally:
         if cur:
@@ -221,30 +248,32 @@ def main():
         results.append("| ------ | ------ | ------ | ------ | ---------------- |")
         for combo in unexpected_sorted:
             b1, b2, b3, b4 = combo
-            results.append(f"| 0x{b1:02X}   | 0x{b2:02X}   | 0x{b3:02X}   | 0x{b4:02X}   | %{b1:02X}%{b2:02X}%{b3:02X}%{b4:02X}           |")
+            results.append(
+                f"| 0x{b1:02X}   | 0x{b2:02X}   | 0x{b3:02X}   | 0x{b4:02X}   | %{b1:02X}%{b2:02X}%{b3:02X}%{b4:02X}           |"
+            )
     else:
         results.append("")
         results.append("No unexpected combinations found!")
         results.append("Only known whitespace characters work in 4-byte sequences.")
 
     # Write to file
-    content = '\n'.join(results)
+    content = "\n".join(results)
     try:
-        with open(outfile, 'w', encoding='utf-8') as f:
+        with open(outfile, "w", encoding="utf-8") as f:
             f.write(content)
         print("\n" + "=" * 60)
         print(f"RESULTS: {len(unexpected)} unexpected combinations")
         print(f"Written to: {outfile}")
         print("=" * 60)
-    except (IOError, OSError) as e:
+    except OSError as e:
         print(f"\nERROR: Failed to write results to {outfile}: {e}", file=sys.stderr)
         # Attempt to save partial results to a fallback file
         partial_file = f"{outfile}.partial"
         try:
-            with open(partial_file, 'w', encoding='utf-8') as f:
+            with open(partial_file, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"Partial results saved to: {partial_file}", file=sys.stderr)
-        except (IOError, OSError) as e2:
+        except OSError as e2:
             print(f"Failed to save partial results: {e2}", file=sys.stderr)
         sys.exit(1)
 

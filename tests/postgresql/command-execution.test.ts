@@ -261,29 +261,35 @@ describe("PostgreSQL Command Execution", () => {
     test("COPY FROM PROGRAM captures multi-line output", async () => {
       await directSQL("CREATE TEMP TABLE IF NOT EXISTS multi_line_output (line TEXT)");
 
-      const { success, error } = await directSQL(
-        "COPY multi_line_output FROM PROGRAM 'printf \"line1\\nline2\\nline3\"'"
-      );
+      try {
+        const { success, error } = await directSQL(
+          "COPY multi_line_output FROM PROGRAM 'printf \"line1\\nline2\\nline3\"'"
+        );
 
-      if (success) {
-        const { rows } = await directSQLExpectSuccess("SELECT * FROM multi_line_output");
-        expect(rows.length).toBe(3);
-      } else {
-        expect(error?.message).toMatch(/permission denied|must be superuser/i);
+        if (success) {
+          const { rows } = await directSQLExpectSuccess("SELECT * FROM multi_line_output");
+          expect(rows.length).toBe(3);
+        } else {
+          expect(error?.message).toMatch(/permission denied|must be superuser/i);
+        }
+      } finally {
+        await directSQL("DROP TABLE IF EXISTS multi_line_output");
       }
-
-      await directSQL("DROP TABLE IF EXISTS multi_line_output");
     });
 
     test("COPY FROM PROGRAM with pipe commands", async () => {
       await directSQL("CREATE TEMP TABLE IF NOT EXISTS pipe_output (line TEXT)");
 
-      const { success } = await directSQL("COPY pipe_output FROM PROGRAM 'echo test | tr a-z A-Z'");
+      try {
+        const { success } = await directSQL(
+          "COPY pipe_output FROM PROGRAM 'echo test | tr a-z A-Z'"
+        );
 
-      // Either works or permission denied
-      expect(typeof success).toBe("boolean");
-
-      await directSQL("DROP TABLE IF EXISTS pipe_output");
+        // Either works or permission denied
+        expect(typeof success).toBe("boolean");
+      } finally {
+        await directSQL("DROP TABLE IF EXISTS pipe_output");
+      }
     });
 
     test("COPY TO PROGRAM with shell redirection", async () => {

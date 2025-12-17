@@ -293,6 +293,7 @@ describe("PostgreSQL Reading Files", () => {
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'secret content'::bytea) as oid"
       );
+      expect(createRows).toHaveLength(1);
       const oid = (createRows[0] as { oid: number }).oid;
 
       try {
@@ -319,6 +320,7 @@ describe("PostgreSQL Reading Files", () => {
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'readable text'::bytea) as oid"
       );
+      expect(createRows).toHaveLength(1);
       const oid = (createRows[0] as { oid: number }).oid;
 
       try {
@@ -339,6 +341,7 @@ describe("PostgreSQL Reading Files", () => {
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'export test data'::bytea) as oid"
       );
+      expect(createRows).toHaveLength(1);
       const oid = (createRows[0] as { oid: number }).oid;
 
       try {
@@ -353,7 +356,7 @@ describe("PostgreSQL Reading Files", () => {
         await cleanupLargeObject(oid);
         // Clean up exported file if it exists
         try {
-          fs.unlinkSync(tempFile);
+          await fs.promises.unlink(tempFile);
         } catch {
           // File may not exist if export failed - ignore
         }
@@ -456,6 +459,7 @@ describe("PostgreSQL Reading Files", () => {
       const { rows: createRows } = await directSQLExpectSuccess(
         "SELECT lo_from_bytea(0, 'injected_content'::bytea) as oid"
       );
+      expect(createRows).toHaveLength(1);
       const oid = (createRows[0] as { oid: number }).oid;
 
       try {

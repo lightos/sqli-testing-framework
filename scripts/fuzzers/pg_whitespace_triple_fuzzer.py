@@ -9,13 +9,7 @@ Usage: python pg_whitespace_triple_fuzzer.py [port] [--verbose]
 import sys
 from itertools import product
 import psycopg2
-from fuzzer_utils import get_pg_connection
-
-
-def log_debug(verbose: bool, msg: str) -> None:
-    """Print debug message if verbose mode is enabled."""
-    if verbose:
-        print(f"[DEBUG] {msg}", file=sys.stderr)
+from fuzzer_utils import get_pg_connection, log_debug
 
 
 def main():
@@ -23,7 +17,18 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
 
-    port = int(args[0]) if args else 5432
+    # Parse port with error handling
+    if args:
+        try:
+            port = int(args[0])
+        except ValueError:
+            print(
+                f"ERROR: Invalid port '{args[0]}' - must be a valid integer",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        port = 5432
 
     # Initialize variables before try block to avoid NameError if connection fails
     conn = None
@@ -37,7 +42,7 @@ def main():
 
         cur.execute("SELECT version()")
         row = cur.fetchone()
-        version = row[0].split(',')[0] if row else "unknown"
+        version = row[0].split(",")[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
         if verbose:
             print("Verbose mode enabled - exceptions will be logged")
@@ -49,7 +54,7 @@ def main():
         print("\nPhase 1: Testing all known whitespace combos (5³ = 125)...")
         for combo in product(single_ws, repeat=3):
             try:
-                chars = ''.join(chr(c) for c in combo)
+                chars = "".join(chr(c) for c in combo)
                 query = f"SELECT 1 UNION{chars}SELECT 2"
                 cur.execute(query)
                 if len(cur.fetchall()) == 2:
@@ -66,7 +71,12 @@ def main():
         print("  (Testing bytes 0x00-0x20 + some special chars)")
 
         # Test bytes: 0x00-0x20 range plus some interesting ones
-        test_bytes = [*range(0x21), 0x7F, 0xA0, 0x85]  # control chars + DEL + NBSP + NEL
+        test_bytes = [
+            *range(0x21),
+            0x7F,
+            0xA0,
+            0x85,
+        ]  # control chars + DEL + NBSP + NEL
 
         tested = 0
 
@@ -77,7 +87,7 @@ def main():
 
             tested += 1
             try:
-                chars = ''.join(chr(c) for c in combo)
+                chars = "".join(chr(c) for c in combo)
                 query = f"SELECT 1 UNION{chars}SELECT 2"
                 cur.execute(query)
                 if len(cur.fetchall()) == 2:
@@ -88,7 +98,10 @@ def main():
                 log_debug(verbose, f"Phase2 {combo}: {type(e).__name__}: {e}")
 
             if tested % 10000 == 0:
-                print(f"    ...tested {tested}, found {len(unexpected)} unexpected", file=sys.stderr)
+                print(
+                    f"    ...tested {tested}, found {len(unexpected)} unexpected",
+                    file=sys.stderr,
+                )
 
         # Phase 3: Quick scan of full range with one wildcard
         print("\nPhase 3: Testing [known_ws][known_ws][0x00-0xFF]...")
@@ -106,7 +119,10 @@ def main():
                     except KeyboardInterrupt:
                         raise
                     except psycopg2.Error as e:
-                        log_debug(verbose, f"Phase3 ({ws1:02X},{ws2:02X},{b:02X}): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase3 ({ws1:02X},{ws2:02X},{b:02X}): {type(e).__name__}: {e}",
+                        )
 
         print("\nPhase 4: Testing [known_ws][0x00-0xFF][known_ws]...")
         for ws1 in single_ws:
@@ -123,7 +139,10 @@ def main():
                     except KeyboardInterrupt:
                         raise
                     except psycopg2.Error as e:
-                        log_debug(verbose, f"Phase4 ({ws1:02X},{b:02X},{ws2:02X}): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase4 ({ws1:02X},{b:02X},{ws2:02X}): {type(e).__name__}: {e}",
+                        )
 
         print("\nPhase 5: Testing [0x00-0xFF][known_ws][known_ws]...")
         for b in range(256):
@@ -140,7 +159,10 @@ def main():
                     except KeyboardInterrupt:
                         raise
                     except psycopg2.Error as e:
-                        log_debug(verbose, f"Phase5 ({b:02X},{ws1:02X},{ws2:02X}): {type(e).__name__}: {e}")
+                        log_debug(
+                            verbose,
+                            f"Phase5 ({b:02X},{ws1:02X},{ws2:02X}): {type(e).__name__}: {e}",
+                        )
     finally:
         if cur:
             cur.close()
@@ -157,12 +179,15 @@ def main():
         print("| Byte 1 | Byte 2 | Byte 3 | URL Encoded    |")
         print("| ------ | ------ | ------ | -------------- |")
         for i, j, k in sorted(unexpected)[:50]:  # Show first 50
-            print(f"| 0x{i:02X}   | 0x{j:02X}   | 0x{k:02X}   | %{i:02X}%{j:02X}%{k:02X}         |")
+            print(
+                f"| 0x{i:02X}   | 0x{j:02X}   | 0x{k:02X}   | %{i:02X}%{j:02X}%{k:02X}         |"
+            )
         if len(unexpected) > 50:
             print(f"... and {len(unexpected) - 50} more")
     else:
         print("\nNo unexpected combinations found!")
         print("Only known whitespace characters work, even in 3-byte sequences.")
+
 
 if __name__ == "__main__":
     main()

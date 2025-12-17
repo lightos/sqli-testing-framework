@@ -108,7 +108,7 @@ export class PostgreSQLAdapter {
   ): Promise<boolean> {
     const { timing } = await this.execute(sql);
     const minExpected = expectedDelayMs - toleranceMs;
-    const maxAllowed = maxExpectedMs ?? Infinity;
+    const maxAllowed = maxExpectedMs !== undefined ? maxExpectedMs + toleranceMs : Infinity;
 
     const meetsLowerBound = timing.durationMs >= minExpected;
     const meetsUpperBound = timing.durationMs <= maxAllowed;

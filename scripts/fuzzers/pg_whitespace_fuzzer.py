@@ -7,13 +7,12 @@ Usage: python pg_whitespace_fuzzer.py [port] [--verbose]
 """
 
 import sys
-from fuzzer_utils import get_pg_connection, get_char_description, url_encode_char
-
-
-def log_debug(verbose: bool, msg: str) -> None:
-    """Print debug message if verbose mode is enabled."""
-    if verbose:
-        print(f"[DEBUG] {msg}", file=sys.stderr)
+from fuzzer_utils import (
+    get_pg_connection,
+    get_char_description,
+    url_encode_char,
+    log_debug,
+)
 
 
 def main():
@@ -21,7 +20,16 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
 
-    port = int(args[0]) if args else 5432
+    if args:
+        try:
+            port = int(args[0])
+        except ValueError:
+            print(
+                f"Error: Invalid port '{args[0]}' - must be an integer", file=sys.stderr
+            )
+            sys.exit(1)
+    else:
+        port = 5432
 
     conn = None
     cur = None
@@ -34,7 +42,7 @@ def main():
 
         cur.execute("SELECT version()")
         row = cur.fetchone()
-        version = row[0].split(',')[0] if row else "unknown"
+        version = row[0].split(",")[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
         if verbose:
             print("Verbose mode enabled - exceptions will be logged")
@@ -84,11 +92,15 @@ def main():
     print("| Hex    | Dec   | URL Encoded | Description |")
     print("| ------ | ----- | ----------- | ----------- |")
     for i in valid_whitespace:
-        print(f"| 0x{i:04X} | {i:5} | {url_encode_char(i):11} | {get_char_description(i)} |")
+        print(
+            f"| 0x{i:04X} | {i:5} | {url_encode_char(i):11} | {get_char_description(i)} |"
+        )
 
     if valid_after_select:
         print("\n" + "=" * 60)
-        print(f"UNARY OPERATORS (work after SELECT before value): {len(valid_after_select)}")
+        print(
+            f"UNARY OPERATORS (work after SELECT before value): {len(valid_after_select)}"
+        )
         print("(NOT true whitespace - only work in specific contexts)")
         print("=" * 60 + "\n")
 
@@ -97,6 +109,7 @@ def main():
         for i in valid_after_select:
             char_repr = repr(chr(i)) if 0x20 <= i < 0x7F else ""
             print(f"| 0x{i:04X} | {i:5} | {char_repr:11} | {get_char_description(i)} |")
+
 
 if __name__ == "__main__":
     main()

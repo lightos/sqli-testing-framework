@@ -4,7 +4,7 @@ services:
     image: mysql:5.7
     container_name: sqli-mysql57
     ports:
-      - "3308:3306"
+      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: testpass
       MYSQL_DATABASE: vulndb
@@ -23,7 +23,7 @@ services:
     image: mysql:8.0
     container_name: sqli-mysql80
     ports:
-      - "3307:3306"
+      - "3308:3306"
     environment:
       MYSQL_ROOT_PASSWORD: testpass
       MYSQL_DATABASE: vulndb
@@ -101,7 +101,7 @@ services:
     image: python:3.11-slim
     container_name: sqli-test-psycopg2
     working_dir: /tests
-    command: sh -c "pip install --no-cache-dir psycopg2-binary==2.9.11 && python test-stacked-queries.py"
+    command: sh -c "pip install -q --no-cache-dir psycopg2-binary==2.9.11 && python test-stacked-queries.py"
     volumes:
       - ../drivers/python:/tests:ro
     environment:

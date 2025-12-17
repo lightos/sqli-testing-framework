@@ -4,6 +4,7 @@ Shared utilities for PostgreSQL fuzzers.
 """
 
 import os
+import sys
 import psycopg2
 
 # Error message for missing PGPASSWORD environment variable
@@ -11,6 +12,17 @@ PGPASSWORD_REQUIRED_MSG = (
     "PGPASSWORD environment variable is required. "
     "Set it with: export PGPASSWORD=yourpassword"
 )
+
+
+def log_debug(verbose: bool, msg: str) -> None:
+    """Print debug message if verbose mode is enabled.
+
+    Args:
+        verbose: Whether verbose mode is enabled
+        msg: Debug message to print
+    """
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
 
 
 def get_pg_connection(port=None):
@@ -41,8 +53,11 @@ def get_pg_connection(port=None):
     elif "PGPORT" in os.environ:
         try:
             db_port = int(os.environ["PGPORT"])
-        except ValueError:
-            raise ValueError(f"Invalid PGPORT environment variable: '{os.environ['PGPORT']}' is not a valid port number")
+        except ValueError as e:
+            port_val = os.environ["PGPORT"]
+            raise ValueError(
+                f"Invalid PGPORT environment variable: '{port_val}' is not a valid port"
+            ) from e
     else:
         db_port = 5432
     user = os.environ.get("PGUSER", "postgres")
@@ -53,8 +68,7 @@ def get_pg_connection(port=None):
         raise ValueError(PGPASSWORD_REQUIRED_MSG)
 
     conn = psycopg2.connect(
-        host=host, port=db_port, user=user,
-        password=password, database=database
+        host=host, port=db_port, user=user, password=password, database=database
     )
     conn.autocommit = True
     return conn
@@ -117,5 +131,4 @@ def url_encode_char(code_point):
     """
     if code_point < 0x100:
         return f"%{code_point:02X}"
-    else:
-        return f"%u{code_point:04X}"
+    return f"%u{code_point:04X}"

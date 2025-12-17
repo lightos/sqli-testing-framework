@@ -5,11 +5,13 @@ Tests various encoding/obfuscation techniques for SQL injection.
 """
 
 import os
-import psycopg2
 import sys
 import tempfile
 import traceback
 from datetime import datetime, timezone
+
+import psycopg2
+
 
 class PgFuzzer:
     def __init__(self, default_port=5432):
@@ -23,13 +25,12 @@ class PgFuzzer:
             raise ValueError("PGPASSWORD environment variable is required")
 
         self.conn = psycopg2.connect(
-            host=host, port=port, user=user,
-            password=password, database=database
+            host=host, port=port, user=user, password=password, database=database
         )
         self.conn.autocommit = True
         self.cur = self.conn.cursor()
         self.cur.execute("SELECT version()")
-        self.version = self.cur.fetchone()[0].split(',')[0]
+        self.version = self.cur.fetchone()[0].split(",")[0]
         self.results = {"version": self.version, "tests": {}}
 
     def test(self, name, query, expected=None):
@@ -43,10 +44,20 @@ class PgFuzzer:
             success = True
             value = result[0] if result else None
             if expected is not None:
-                success = (str(value) == str(expected))
-            return {"success": success, "value": value, "query": query[:100], "name": name}
+                success = str(value) == str(expected)
+            return {
+                "success": success,
+                "value": value,
+                "query": query[:100],
+                "name": name,
+            }
         except Exception as e:
-            return {"success": False, "error": str(e)[:100], "query": query[:100], "name": name}
+            return {
+                "success": False,
+                "error": str(e)[:100],
+                "query": query[:100],
+                "name": name,
+            }
 
     def close(self):
         self.cur.close()
@@ -55,9 +66,9 @@ class PgFuzzer:
 
 def fuzz_dollar_quotes(fuzzer):
     """Test dollar quote tag variations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("1. DOLLAR QUOTE TAG FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -110,9 +121,9 @@ def fuzz_dollar_quotes(fuzzer):
 
 def fuzz_string_encoding(fuzzer):
     """Test string encoding variations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("2. STRING ENCODING FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
     target = "admin"  # String we're trying to represent
@@ -182,24 +193,35 @@ def fuzz_string_encoding(fuzzer):
 
 def fuzz_numeric(fuzzer):
     """Test numeric representation variations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("3. NUMERIC REPRESENTATION FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
     # Scientific notation
     print("\n  Scientific notation...")
     sci_tests = [
-        ("1e0", 1), ("1E0", 1), ("1e+0", 1), ("1e-0", 1),
-        ("10e-1", 1), ("0.1e1", 1), ("0.1e+1", 1),
-        (".1e1", 1), ("1.", 1), (".5", 0.5),
-        ("1e1", 10), ("1E1", 10), ("1e+1", 10),
+        ("1e0", 1),
+        ("1E0", 1),
+        ("1e+0", 1),
+        ("1e-0", 1),
+        ("10e-1", 1),
+        ("0.1e1", 1),
+        ("0.1e+1", 1),
+        (".1e1", 1),
+        ("1.", 1),
+        (".5", 0.5),
+        ("1e1", 10),
+        ("1E1", 10),
+        ("1e+1", 10),
     ]
     for expr, expected in sci_tests:
         r = fuzzer.test(f"sci:{expr}", f"SELECT {expr}")
         val = r.get("value")
-        status = "✓" if r["success"] and (val is None or float(val) == expected) else "✗"
+        status = (
+            "✓" if r["success"] and (val is None or float(val) == expected) else "✗"
+        )
         print(f"    {status} {expr} = {r.get('value', 'ERR')}")
         results.append((f"sci:{expr}", r["success"], expr))
 
@@ -222,15 +244,24 @@ def fuzz_numeric(fuzzer):
     # Numeric expressions that equal 1
     print("\n  Expressions equal to 1...")
     expr_tests = [
-        ("1+0", "addition"), ("2-1", "subtraction"),
-        ("1*1", "multiplication"), ("1/1", "division"),
-        ("1%2", "modulo"), ("2>>1", "right shift"),
-        ("1<<0", "left shift"), ("1&1", "bitwise and"),
-        ("1|0", "bitwise or"), ("1^0", "bitwise xor"),
-        ("~~1", "double negation"), ("--1", "double minus"),
-        ("ABS(-1)", "abs"), ("CEIL(0.1)", "ceil"),
-        ("FLOOR(1.9)", "floor"), ("ROUND(1.4)", "round"),
-        ("SIGN(100)", "sign"), ("LENGTH('x')", "length"),
+        ("1+0", "addition"),
+        ("2-1", "subtraction"),
+        ("1*1", "multiplication"),
+        ("1/1", "division"),
+        ("1%2", "modulo"),
+        ("2>>1", "right shift"),
+        ("1<<0", "left shift"),
+        ("1&1", "bitwise and"),
+        ("1|0", "bitwise or"),
+        ("1^0", "bitwise xor"),
+        ("~~1", "double negation"),
+        ("--1", "double minus"),
+        ("ABS(-1)", "abs"),
+        ("CEIL(0.1)", "ceil"),
+        ("FLOOR(1.9)", "floor"),
+        ("ROUND(1.4)", "round"),
+        ("SIGN(100)", "sign"),
+        ("LENGTH('x')", "length"),
         ("ASCII('1')-48", "ascii math"),
     ]
     for expr, desc in expr_tests:
@@ -260,9 +291,9 @@ def fuzz_numeric(fuzzer):
 
 def fuzz_operators(fuzzer):
     """Test operator and function alternatives."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("4. OPERATOR/FUNCTION ALTERNATIVES FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -299,7 +330,7 @@ def fuzz_operators(fuzzer):
     for expr, desc in pattern_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     # Comparison alternatives
@@ -322,7 +353,7 @@ def fuzz_operators(fuzzer):
     for expr, desc in cmp_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     # OR/AND alternatives
@@ -332,13 +363,19 @@ def fuzz_operators(fuzzer):
         ("true AND true", "AND keyword"),
         ("NOT false", "NOT keyword"),
         ("1=1 OR 1=2", "OR with comparisons"),
-        ("(SELECT BOOL_OR(v) FROM (VALUES (true),(false)) AS t(v))", "BOOL_OR aggregate"),
-        ("(SELECT BOOL_AND(v) FROM (VALUES (true),(true)) AS t(v))", "BOOL_AND aggregate"),
+        (
+            "(SELECT BOOL_OR(v) FROM (VALUES (true),(false)) AS t(v))",
+            "BOOL_OR aggregate",
+        ),
+        (
+            "(SELECT BOOL_AND(v) FROM (VALUES (true),(true)) AS t(v))",
+            "BOOL_AND aggregate",
+        ),
     ]
     for expr, desc in bool_op_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     return results
@@ -346,9 +383,9 @@ def fuzz_operators(fuzzer):
 
 def fuzz_type_casting(fuzzer):
     """Test type casting variations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("5. TYPE CASTING VARIATIONS FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -371,7 +408,7 @@ def fuzz_type_casting(fuzzer):
     for expr, desc in int_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     # String casting
@@ -389,7 +426,7 @@ def fuzz_type_casting(fuzzer):
     for expr, desc in str_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     # Boolean casting
@@ -409,7 +446,7 @@ def fuzz_type_casting(fuzzer):
     for expr, desc in bool_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     return results
@@ -417,9 +454,9 @@ def fuzz_type_casting(fuzzer):
 
 def fuzz_null_bytes(fuzzer):
     """Test NULL byte handling."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("6. NULL BYTE HANDLING FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -446,44 +483,72 @@ def fuzz_null_bytes(fuzzer):
 
 def fuzz_booleans(fuzzer):
     """Test boolean representation variations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("7. BOOLEAN REPRESENTATION FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
     # TRUE representations
     print("\n  TRUE representations...")
     true_tests = [
-        "true", "TRUE", "True", "'t'::boolean", "'T'::boolean",
-        "'true'::boolean", "'TRUE'::boolean", "'True'::boolean",
-        "'1'::boolean", "'y'::boolean", "'Y'::boolean",
-        "'yes'::boolean", "'YES'::boolean", "'Yes'::boolean",
-        "'on'::boolean", "'ON'::boolean", "'On'::boolean",
-        "1::boolean", "1=1", "NOT false", "NOT NOT true",
-        "true AND true", "true OR false",
-        "BOOL 't'", "BOOL 'true'",
+        "true",
+        "TRUE",
+        "True",
+        "'t'::boolean",
+        "'T'::boolean",
+        "'true'::boolean",
+        "'TRUE'::boolean",
+        "'True'::boolean",
+        "'1'::boolean",
+        "'y'::boolean",
+        "'Y'::boolean",
+        "'yes'::boolean",
+        "'YES'::boolean",
+        "'Yes'::boolean",
+        "'on'::boolean",
+        "'ON'::boolean",
+        "'On'::boolean",
+        "1::boolean",
+        "1=1",
+        "NOT false",
+        "NOT NOT true",
+        "true AND true",
+        "true OR false",
+        "BOOL 't'",
+        "BOOL 'true'",
     ]
     for expr in true_tests:
         r = fuzzer.test(f"true:{expr}", f"SELECT {expr}")
-        is_true = r["success"] and r.get("value") in [True, 't', 'true', 1, '1']
+        is_true = r["success"] and r.get("value") in [True, "t", "true", 1, "1"]
         status = "✓" if is_true else "✗"
-        print(f"    {status} {expr}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {expr}: {r.get('value', r.get('error', '')[:20])}")
         results.append((f"true:{expr}", r["success"], expr))
 
     # FALSE representations
     print("\n  FALSE representations...")
     false_tests = [
-        "false", "FALSE", "False", "'f'::boolean", "'F'::boolean",
-        "'false'::boolean", "'FALSE'::boolean", "'0'::boolean",
-        "'n'::boolean", "'N'::boolean", "'no'::boolean",
-        "'off'::boolean", "0::boolean", "1=2", "NOT true",
+        "false",
+        "FALSE",
+        "False",
+        "'f'::boolean",
+        "'F'::boolean",
+        "'false'::boolean",
+        "'FALSE'::boolean",
+        "'0'::boolean",
+        "'n'::boolean",
+        "'N'::boolean",
+        "'no'::boolean",
+        "'off'::boolean",
+        "0::boolean",
+        "1=2",
+        "NOT true",
     ]
     for expr in false_tests:
         r = fuzzer.test(f"false:{expr}", f"SELECT {expr}")
-        is_false = r["success"] and r.get("value") in [False, 'f', 'false', 0, '0']
+        is_false = r["success"] and r.get("value") in [False, "f", "false", 0, "0"]
         status = "✓" if is_false else "✗"
-        print(f"    {status} {expr}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {expr}: {r.get('value', r.get('error', '')[:20])}")
         results.append((f"false:{expr}", r["success"], expr))
 
     return results
@@ -491,9 +556,9 @@ def fuzz_booleans(fuzzer):
 
 def fuzz_identifiers(fuzzer):
     """Test keyword/identifier obfuscation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("8. KEYWORD/IDENTIFIER OBFUSCATION FUZZING")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -510,7 +575,7 @@ def fuzz_identifiers(fuzzer):
     for expr, desc in schema_tests:
         r = fuzzer.test(desc, f"SELECT {expr}")
         status = "✓" if r["success"] else "✗"
-        print(f"    {status} {desc}: {r.get('value', r.get('error','')[:20])}")
+        print(f"    {status} {desc}: {r.get('value', r.get('error', '')[:20])}")
         results.append((desc, r["success"], expr))
 
     # Quoted identifiers
@@ -548,7 +613,10 @@ def fuzz_identifiers(fuzzer):
     # Mixed case keywords (should all work)
     print("\n  Mixed case keywords...")
     case_tests = [
-        "SeLeCt 1", "SELECT 1", "select 1", "sELECT 1",
+        "SeLeCt 1",
+        "SELECT 1",
+        "select 1",
+        "sELECT 1",
     ]
     for query in case_tests:
         r = fuzzer.test(f"case:{query}", query)
@@ -561,7 +629,9 @@ def fuzz_identifiers(fuzzer):
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5432
-    outfile = sys.argv[2] if len(sys.argv) > 2 else f"pg_comprehensive_results_{port}.txt"
+    outfile = (
+        sys.argv[2] if len(sys.argv) > 2 else f"pg_comprehensive_results_{port}.txt"
+    )
 
     print("PostgreSQL Comprehensive WAF Evasion Fuzzer")
     print(f"Port: {port}")
@@ -573,25 +643,26 @@ def main():
         print(f"Error: Failed to connect to PostgreSQL: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Connected to: {fuzzer.version}")
+    try:
+        print(f"Connected to: {fuzzer.version}")
 
-    all_results = {
-        "version": fuzzer.version,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "sections": {}
-    }
+        all_results = {
+            "version": fuzzer.version,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sections": {},
+        }
 
-    # Run all fuzzers
-    all_results["sections"]["dollar_quotes"] = fuzz_dollar_quotes(fuzzer)
-    all_results["sections"]["string_encoding"] = fuzz_string_encoding(fuzzer)
-    all_results["sections"]["numeric"] = fuzz_numeric(fuzzer)
-    all_results["sections"]["operators"] = fuzz_operators(fuzzer)
-    all_results["sections"]["type_casting"] = fuzz_type_casting(fuzzer)
-    all_results["sections"]["null_bytes"] = fuzz_null_bytes(fuzzer)
-    all_results["sections"]["booleans"] = fuzz_booleans(fuzzer)
-    all_results["sections"]["identifiers"] = fuzz_identifiers(fuzzer)
-
-    fuzzer.close()
+        # Run all fuzzers
+        all_results["sections"]["dollar_quotes"] = fuzz_dollar_quotes(fuzzer)
+        all_results["sections"]["string_encoding"] = fuzz_string_encoding(fuzzer)
+        all_results["sections"]["numeric"] = fuzz_numeric(fuzzer)
+        all_results["sections"]["operators"] = fuzz_operators(fuzzer)
+        all_results["sections"]["type_casting"] = fuzz_type_casting(fuzzer)
+        all_results["sections"]["null_bytes"] = fuzz_null_bytes(fuzzer)
+        all_results["sections"]["booleans"] = fuzz_booleans(fuzzer)
+        all_results["sections"]["identifiers"] = fuzz_identifiers(fuzzer)
+    finally:
+        fuzzer.close()
 
     # Write results with atomic write
     try:
@@ -601,10 +672,10 @@ def main():
             os.makedirs(outdir, exist_ok=True)
 
         # Write to temp file first for atomic operation
-        fd, tmpfile = tempfile.mkstemp(dir=outdir or '.', suffix='.tmp')
+        fd, tmpfile = tempfile.mkstemp(dir=outdir or ".", suffix=".tmp")
         # Wrap fdopen to ensure fd is closed if fdopen fails
         try:
-            f = os.fdopen(fd, 'w', encoding='utf-8')
+            f = os.fdopen(fd, "w", encoding="utf-8")
         except Exception:
             os.close(fd)
             raise
@@ -641,12 +712,15 @@ def main():
                 os.unlink(tmpfile)
             raise
     except Exception as e:
-        print(f"Error: Failed to write results to {outfile}: {e}\n{traceback.format_exc()}", file=sys.stderr)
+        print(
+            f"Error: Failed to write results to {outfile}: {e}\n{traceback.format_exc()}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results written to: {outfile}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Summary
     print("\nSUMMARY:")

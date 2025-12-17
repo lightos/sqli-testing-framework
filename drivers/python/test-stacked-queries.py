@@ -22,22 +22,18 @@ except ImportError:
     sys.exit(1)
 
 # Connection parameters
-host = os.getenv('PG_HOST', 'postgres-16')
-port = os.getenv('PG_PORT', '5432')
-dbname = os.getenv('PG_DATABASE', 'vulndb')
-user = os.getenv('PG_USER', 'postgres')
-password = os.getenv('PG_PASSWORD', 'testpass')
+host = os.getenv("PG_HOST", "postgres-16")
+port = os.getenv("PG_PORT", "5432")
+dbname = os.getenv("PG_DATABASE", "vulndb")
+user = os.getenv("PG_USER", "postgres")
+password = os.getenv("PG_PASSWORD", "testpass")
 
 print("=== Python psycopg2 Multi-Statement Tests ===\n")
 
 # Connect
 try:
     conn = psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password
+        host=host, port=port, dbname=dbname, user=user, password=password
     )
     conn.autocommit = True
     print(f"Connected to PostgreSQL at {host}:{port}\n")
@@ -68,7 +64,9 @@ print()
 print("Test 2: execute() with SELECT + INSERT (stacked modification, no params)")
 test_action = f"python_test_{int(time.time())}"
 try:
-    cursor.execute(f"SELECT 1; INSERT INTO logs (action, ip_address) VALUES ('{test_action}', '127.0.0.1');")
+    cursor.execute(
+        f"SELECT 1; INSERT INTO logs (action, ip_address) VALUES ('{test_action}', '127.0.0.1');"
+    )
     # Verify insert worked
     cursor.execute(f"SELECT * FROM logs WHERE action = '{test_action}'")
     rows = cursor.fetchall()
@@ -109,13 +107,17 @@ print()
 
 # Test 4: execute() with multiple statements + params (psycopg2 uses client-side substitution, so this works)
 print("Test 4: execute() with multiple statements + params")
-print("  Note: psycopg2 uses client-side parameter substitution, NOT server-side prepared statements")
+print(
+    "  Note: psycopg2 uses client-side parameter substitution, NOT server-side prepared statements"
+)
 try:
     cursor.execute("SELECT %s; SELECT %s;", (1, 2))
     row = cursor.fetchone()
     # psycopg2 returns the LAST result set
     if row[0] == 2:
-        print(f"  PASS: execute() supports multi-statements with params (returns last result: {row[0]})")
+        print(
+            f"  PASS: execute() supports multi-statements with params (returns last result: {row[0]})"
+        )
         passed += 1
     else:
         print(f"  FAIL: Unexpected result: {row}")

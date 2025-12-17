@@ -18,9 +18,17 @@ export async function initMySQLDirectRunner(): Promise<void> {
     return;
   }
 
-  connection = createMySQLConnectionFromEnv();
-  await connection.connect();
-  adapter = new MySQLAdapter(connection);
+  const conn = createMySQLConnectionFromEnv();
+  try {
+    await conn.connect();
+    connection = conn;
+    adapter = new MySQLAdapter(connection);
+  } catch (error) {
+    await conn.disconnect().catch(() => {
+      // Ignore cleanup errors
+    });
+    throw error;
+  }
 }
 
 /**

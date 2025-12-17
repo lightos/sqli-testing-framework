@@ -33,8 +33,9 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("inet_server_addr() returns IP address", async () => {
       const { rows } = await directSQLExpectSuccess("SELECT inet_server_addr()::text as addr");
       const addr = (rows[0] as { addr: string }).addr;
-      // Depending on connection, could be IPv4 or IPv6
-      expect(addr).toMatch(/^[0-9a-f:./]+$/);
+      // Depending on connection, could be IPv4 or IPv6, optionally with CIDR suffix
+      // Match IPv4 (e.g., 192.168.1.1 or 192.168.1.1/32) or IPv6 (e.g., 2001:db8::1)
+      expect(addr).toMatch(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\/\d+)?|[0-9a-f:]+(\/\d+)?)$/i);
     });
 
     test("inet_server_port() returns port number", async () => {
@@ -80,9 +81,10 @@ describe("PostgreSQL Server Hardware/Network Information", () => {
     test("uuid-ossp extension check", async () => {
       // Just check if extension is installed or available
       const { rows } = await directSQLExpectSuccess(
-        "SELECT count(*) FROM pg_extension WHERE extname = 'uuid-ossp'"
+        "SELECT count(*)::int as cnt FROM pg_extension WHERE extname = 'uuid-ossp'"
       );
-      expect(rows.length).toBeGreaterThan(0);
+      const count = (rows[0] as { cnt: number }).cnt;
+      expect(count).toBeGreaterThanOrEqual(0); // Extension may or may not be installed
     });
   });
 

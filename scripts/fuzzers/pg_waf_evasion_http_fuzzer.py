@@ -9,9 +9,16 @@ import sys
 
 BASE_URL = "http://localhost:3000"
 
-def test_payload(endpoint, param, payload, desc):
-def test_payload(endpoint, param, payload):
-    """Test a payload and return result."""
+def test_payload(endpoint, param, payload, desc=None):
+    """Test a payload and return result.
+
+    Args:
+        endpoint: API endpoint path (e.g., "/users")
+        param: Parameter name to inject into
+        payload: The SQL injection payload
+        desc: Optional description for logging/debugging
+    """
+    try:
         if endpoint == "/users":
             r = requests.get(f"{BASE_URL}{endpoint}", params={param: payload}, timeout=5)
         else:

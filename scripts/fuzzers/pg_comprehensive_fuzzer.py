@@ -629,7 +629,7 @@ def main():
 
             # Atomic replace
             os.replace(tmpfile, outfile)
-        except:
+        except Exception:
             # Clean up temp file on failure
             if os.path.exists(tmpfile):
                 os.unlink(tmpfile)

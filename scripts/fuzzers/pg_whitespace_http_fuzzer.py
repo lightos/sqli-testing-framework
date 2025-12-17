@@ -52,7 +52,7 @@ def main():
 
     for i in range(128):
         char = chr(i)
-        # URL encode the character
+        # URL encode for display purposes
         encoded = urllib.parse.quote(char, safe='')
 
         # Build payload: 1{char}UNION{char}SELECT{char}...
@@ -167,12 +167,12 @@ def main():
     with open(outfile, 'w') as f:
         f.write('\n'.join(results))
 
-    print(f"\n{'='*60}")
+    print("\n" + "=" * 60)
     print(f"Results written to: {outfile}")
-    print(f"{'='*60}")
+    print("=" * 60)
 
     # Summary
-    print(f"\nSUMMARY:")
+    print("\nSUMMARY:")
     print(f"  Single char whitespace via HTTP: {len(single_valid)}")
     print(f"  Characters: {[hex(x) for x in single_valid]}")
 

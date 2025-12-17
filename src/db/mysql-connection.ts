@@ -1,4 +1,4 @@
-import mysql from "mysql2/promise";
+import mysql, { ResultSetHeader } from "mysql2/promise";
 import { logger } from "../utils/logger.js";
 
 export interface MySQLConnectionConfig {
@@ -13,6 +13,19 @@ export interface MySQLQueryResult {
   rows: Record<string, unknown>[];
   rowCount: number;
   affectedRows: number;
+  insertId?: number;
+}
+
+/**
+ * Type guard to check if result is a ResultSetHeader (non-SELECT result)
+ */
+function isResultSetHeader(result: unknown): result is ResultSetHeader {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    "affectedRows" in result &&
+    typeof (result as ResultSetHeader).affectedRows === "number"
+  );
 }
 
 /**
@@ -44,6 +57,8 @@ export class MySQLConnectionManager {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
+      connectTimeout: 10000, // 10 seconds
+      acquireTimeout: 10000,
     });
 
     // Test connection
@@ -79,9 +94,9 @@ export class MySQLConnectionManager {
       throw new Error("MySQL connection pool not initialized. Call connect() first.");
     }
 
-    const [rows, _fields] = await this.pool.query<mysql.RowDataPacket[]>(sql);
+    const [rows] = await this.pool.query(sql);
 
-    // Handle different result types (SELECT vs INSERT/UPDATE/DELETE)
+    // Handle SELECT queries (returns array of rows)
     if (Array.isArray(rows)) {
       return {
         rows: rows as Record<string, unknown>[],
@@ -90,12 +105,21 @@ export class MySQLConnectionManager {
       };
     }
 
-    // For non-SELECT queries
-    const result = rows as mysql.ResultSetHeader;
+    // Handle INSERT/UPDATE/DELETE queries (returns ResultSetHeader)
+    if (isResultSetHeader(rows)) {
+      return {
+        rows: [],
+        rowCount: 0,
+        affectedRows: rows.affectedRows,
+        insertId: rows.insertId > 0 ? rows.insertId : undefined,
+      };
+    }
+
+    // Fallback for unexpected result types
     return {
       rows: [],
       rowCount: 0,
-      affectedRows: result.affectedRows,
+      affectedRows: 0,
     };
   }
 

@@ -15,11 +15,11 @@ import time
 
 try:
     import psycopg2
-except ImportError:
-    print("Installing psycopg2-binary...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary", "-q"])
-    import psycopg2
+except ImportError as e:
+    print("ERROR: psycopg2 not installed.", file=sys.stderr)
+    print("Install with: pip install psycopg2-binary", file=sys.stderr)
+    print("Or run via docker-compose which handles dependencies.", file=sys.stderr)
+    sys.exit(1)
 
 # Connection parameters
 host = os.getenv('PG_HOST', 'postgres-16')
@@ -55,11 +55,11 @@ try:
     cursor.execute("SELECT 1 as a; SELECT 2 as b;")
     # psycopg2 returns the LAST result set
     row = cursor.fetchone()
-    print(f"  PASS: execute() supports multi-statements (no params)")
+    print("  PASS: execute() supports multi-statements (no params)")
     print(f"  Result from last statement: b = {row[0]}")
     passed += 1
 except Exception as e:
-    print(f"  FAIL: execute() rejected multi-statements")
+    print("  FAIL: execute() rejected multi-statements")
     print(f"  Error: {e}")
     failed += 1
 print()
@@ -76,12 +76,12 @@ try:
         print(f"  PASS: execute() executed stacked INSERT ({len(rows)} rows inserted)")
         passed += 1
     else:
-        print(f"  FAIL: INSERT did not persist")
+        print("  FAIL: INSERT did not persist")
         failed += 1
     # Cleanup
     cursor.execute(f"DELETE FROM logs WHERE action = '{test_action}'")
 except Exception as e:
-    print(f"  FAIL: execute() rejected stacked modification")
+    print("  FAIL: execute() rejected stacked modification")
     print(f"  Error: {e}")
     failed += 1
 print()
@@ -92,13 +92,13 @@ try:
     cursor.execute("SELECT %s::int + %s::int as sum", (5, 3))
     row = cursor.fetchone()
     if row[0] == 8:
-        print(f"  PASS: execute() works with single parameterized statement (sum = 8)")
+        print("  PASS: execute() works with single parameterized statement (sum = 8)")
         passed += 1
     else:
         print(f"  FAIL: Unexpected result: {row[0]}")
         failed += 1
 except Exception as e:
-    print(f"  FAIL: execute() failed on single parameterized statement")
+    print("  FAIL: execute() failed on single parameterized statement")
     print(f"  Error: {e}")
     failed += 1
 print()
@@ -117,7 +117,7 @@ try:
         print(f"  FAIL: Unexpected result: {row}")
         failed += 1
 except Exception as e:
-    print(f"  FAIL: execute() rejected multi-statements with params")
+    print("  FAIL: execute() rejected multi-statements with params")
     print(f"  Error: {type(e).__name__}: {e}")
     failed += 1
 print()
